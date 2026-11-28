@@ -9,8 +9,10 @@ import os
 import re
 import subprocess
 import tempfile
+import time
 from collections.abc import Iterable
 from contextlib import suppress
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
 
@@ -86,14 +88,17 @@ class W0Error(ValueError):
     """Raised when W0 input validation fails."""
 
 
-# Thread-safe (resolved_path, st_mtime_ns, st_size) LRU cache for hashed JSON reads.
-# A file whose mtime_ns and size are unchanged is byte-identical, so its cached
-# (value, sha256) is exact; any external edit changes the key and invalidates.
+# Thread-safe (resolved_path, st_mtime_ns, st_ctime_ns, st_inode, st_size) LRU cache for
+# hashed JSON reads. ctime and inode catch atomic replacements and os.utime rewrites that
+# restore mtime; the min-age rule refuses to memo-trust freshly written files, since
+# coarse clocks can stamp a rewrite with an identical ctime. Callers always receive a
+# deep copy, so in-place mutation can never poison the cache.
 
 _HASHED_JSON_CACHE_CAPACITY = int(os.environ.get("MOEX_HASHED_JSON_CACHE_CAPACITY", "256"))
+_HASHED_JSON_MIN_AGE_NS = 2 * 1_000_000_000
 
 
-_HASHED_JSON_CACHE: _HashedJSONCache[tuple[str, int, int], tuple[dict[str, Any], str]] = (
+_HASHED_JSON_CACHE: _HashedJSONCache[tuple[str, int, int, int, int], tuple[dict[str, Any], str]] = (
     _HashedJSONCache(_HASHED_JSON_CACHE_CAPACITY)
 )
 
@@ -109,10 +114,13 @@ def read_hashed_json(
         stat = resolved.stat()
     except OSError as exc:
         raise error(f"cannot stat {label} {path}: {exc}") from exc
-    key = (str(resolved), stat.st_mtime_ns, stat.st_size)
-    cached = _HASHED_JSON_CACHE.get(key)
-    if cached is not None:
-        return cached
+    key = (str(resolved), stat.st_mtime_ns, stat.st_ctime_ns, stat.st_ino, stat.st_size)
+    fresh = (time.time_ns() - stat.st_ctime_ns) < _HASHED_JSON_MIN_AGE_NS
+    if not fresh:
+        cached = _HASHED_JSON_CACHE.get(key)
+        if cached is not None:
+            cached_value, cached_digest = cached
+            return deepcopy(cached_value), cached_digest
     try:
         raw = resolved.read_bytes()
         value = as_str_dict(json.loads(raw.decode("utf-8")), label=label, error=error)
@@ -120,7 +128,7 @@ def read_hashed_json(
         raise error(f"cannot read {label} {path}: {exc}") from exc
     result = (cast(dict[str, Any], value), sha256_bytes(raw))
     _HASHED_JSON_CACHE.put(key, result)
-    return result
+    return deepcopy(result[0]), result[1]
 
 
 def write_json(path: Path, value: Any) -> None:

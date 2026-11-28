@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -96,6 +97,43 @@ class W0Tests(unittest.TestCase):
             with self.assertRaises(W0Error) as ctx:
                 load_contracts(path, "NEAR", "FAR")
             self.assertIn("must be a finite number", str(ctx.exception))
+
+    def test_read_hashed_json_mutation_does_not_poison_cache(self):
+        from moex_spread_lab.core import w0
+
+        class E(W0Error):
+            pass
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "x.json"
+            path.write_text('{"a": 1}', encoding="utf-8")
+            original_min_age = w0._HASHED_JSON_MIN_AGE_NS
+            w0._HASHED_JSON_MIN_AGE_NS = 0
+            try:
+                first, digest = w0.read_hashed_json(path, error=E)
+                first["a"] = 999
+                second, second_digest = w0.read_hashed_json(path, error=E)
+            finally:
+                w0._HASHED_JSON_MIN_AGE_NS = original_min_age
+            self.assertEqual(second, {"a": 1})
+            self.assertEqual(second_digest, digest)
+
+    def test_read_hashed_json_same_size_rewrite_with_restored_mtime(self):
+        from moex_spread_lab.core import w0
+
+        class E(W0Error):
+            pass
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "x.json"
+            path.write_text('{"a": 1}', encoding="utf-8")
+            w0.read_hashed_json(path, error=E)
+            stat = path.stat()
+            path.write_text('{"a": 2}', encoding="utf-8")
+            os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+            # Freshly written files bypass the memo (coarse clocks), so the rewrite is seen.
+            after, _ = w0.read_hashed_json(path, error=E)
+            self.assertEqual(after, {"a": 2})
 
     def test_validate_contract_number_rejects_huge_ints(self):
         from moex_spread_lab.core.w0 import _validate_contract_number

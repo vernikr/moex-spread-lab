@@ -12,7 +12,7 @@ from typing import cast as _cast
 import pyarrow as pa
 
 from .bar_types import DataLakeError
-from .io import atomic_write_bytes, atomic_write_json
+from .io import atomic_write_bytes, atomic_write_json, writer_lock
 
 RAW_ARCHIVE_SCHEMA = "market-data-raw.v1"
 
@@ -114,6 +114,20 @@ class RawResponseArchive:
         ttl_days: int = 30,
         pin: bool = False,
     ) -> dict[str, Any]:
+        with writer_lock(self.lake_root / "locks" / "manifest.lock"):
+            return self._archive_unlocked(
+                url=url, raw=raw, received_at=received_at, ttl_days=ttl_days, pin=pin
+            )
+
+    def _archive_unlocked(
+        self,
+        *,
+        url: str,
+        raw: bytes,
+        received_at: str,
+        ttl_days: int,
+        pin: bool,
+    ) -> dict[str, Any]:
         raw_value = cast("object", raw)
         if not url or not isinstance(raw_value, bytes):
             raise DataLakeError("raw response requires a URL and exact bytes")
@@ -163,6 +177,13 @@ class RawResponseArchive:
         return entry
 
     def verify(self) -> dict[str, Any]:
+        lock_path = self.lake_root / "locks" / "manifest.lock"
+        if not lock_path.exists():
+            return self._verify_unlocked()
+        with writer_lock(lock_path):
+            return self._verify_unlocked()
+
+    def _verify_unlocked(self) -> dict[str, Any]:
         manifest = self._read_manifest()
         entries = [
             _cast("dict[str, Any]", item)
@@ -185,6 +206,13 @@ class RawResponseArchive:
         }
 
     def gc(self, *, dry_run: bool = True) -> dict[str, Any]:
+        lock_path = self.lake_root / "locks" / "manifest.lock"
+        if dry_run and not lock_path.exists():
+            return self._gc_unlocked(dry_run=True)
+        with writer_lock(lock_path):
+            return self._gc_unlocked(dry_run=dry_run)
+
+    def _gc_unlocked(self, *, dry_run: bool) -> dict[str, Any]:
         manifest = self._read_manifest()
         now = datetime.now(UTC)
         expired: list[dict[str, Any]] = []

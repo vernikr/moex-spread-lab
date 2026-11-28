@@ -21,6 +21,7 @@ from .bar_types import (
     reject_sealed_table_write,
     verify_archived_record,
 )
+from .io import writer_lock
 from .legacy_series import LegacyCandleSeries
 from .legacy_series import component as _component
 from .legacy_series import read_legacy_series as _read_legacy_series
@@ -87,7 +88,7 @@ class ParquetBarStore:
         self.bars_root = self.lake_root / "bars"
         self.sources_root = self.lake_root / "sources"
         self.manifest_path = self.lake_root / "manifest.json"
-        self._manifest_sig: tuple[int, int] | None = None
+        self._manifest_sig: tuple[int, int, int] | None = None
         self._manifest_cache: dict[str, Any] | None = None
         self._manifest_by_id: dict[str, dict[str, Any]] = {}
         self._manifest_by_legacy: dict[Path, dict[str, Any]] = {}
@@ -122,7 +123,7 @@ class ParquetBarStore:
             self._manifest_by_id.clear()
             self._manifest_by_legacy.clear()
             return {"schema_version": DATA_LAKE_SCHEMA, "datasets": []}
-        sig = (st.st_mtime_ns, st.st_size)
+        sig = (st.st_ino, st.st_mtime_ns, st.st_size)
         if sig == self._manifest_sig and self._manifest_cache is not None:
             return self._manifest_cache
         value = parse_lake_manifest(self.manifest_path)
@@ -136,7 +137,10 @@ class ParquetBarStore:
         return self._read_manifest()
 
     def _upsert_manifest(self, record: dict[str, Any]) -> None:
-        upsert_manifest(self.manifest_path, self._read_manifest(), record)
+        with writer_lock(self.lake_root / "locks" / "manifest.lock"):
+            self._manifest_sig = None
+            upsert_manifest(self.manifest_path, self._read_manifest(), record)
+            self._manifest_sig = None
 
     def import_legacy(self, legacy_path: Path, *, replace: bool = False) -> dict[str, Any]:
         series = _read_legacy_series(legacy_path)
@@ -234,13 +238,7 @@ class ParquetBarStore:
 
     def upsert_legacy(self, legacy_path: Path) -> dict[str, Any]:
         """Atomically replace a dataset from a merged series without duplicate keys."""
-        series = _read_legacy_series(legacy_path)
-        try:
-            self._record(series.secid, series.timeframe)
-            replace = True
-        except DataLakeError:
-            replace = False
-        return self.import_legacy(series.path, replace=replace)
+        return self.import_legacy(legacy_path, replace=True)
 
     def verify_all(self) -> dict[str, Any]:
         records = manifest_records(self._read_manifest())

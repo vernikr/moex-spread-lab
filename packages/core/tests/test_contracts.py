@@ -31,6 +31,10 @@ class CoreContractsTests(unittest.TestCase):
         self.assertFalse(float_spec.contains(0.4))
         self.assertFalse(float_spec.contains(float("nan")))
 
+    def test_parameter_spec_contains_rejects_huge_ints(self) -> None:
+        spec = ParameterSpec("a", "a", "int", 10, 1, 100, 1)
+        self.assertFalse(spec.contains(10**400))
+
     def test_window_snapshot_truncation_preserves_metadata(self) -> None:
         rows = ({"date": "2026-01-01", "spread": 10.0}, {"date": "2026-01-02", "spread": 12.0})
         snap = WindowSnapshot(

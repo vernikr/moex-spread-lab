@@ -155,9 +155,14 @@ run_id = _run_id
 def _validate_contract_number(
     value: Any, field: str, *, error: type[W0Error] = W0Error, positive: bool = False
 ) -> float:
-    if type(value) not in (int, float) or not math.isfinite(float(value)):
+    if type(value) not in (int, float):
         raise error(f"{field} must be a finite number")
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError as exc:  # a plain int too large for float64
+        raise error(f"{field} must be a finite number") from exc
+    if not math.isfinite(number):
+        raise error(f"{field} must be a finite number")
     if positive and number <= 0:
         raise error(f"{field} must be positive")
     return number

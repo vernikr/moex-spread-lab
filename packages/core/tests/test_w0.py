@@ -97,6 +97,12 @@ class W0Tests(unittest.TestCase):
                 load_contracts(path, "NEAR", "FAR")
             self.assertIn("must be a finite number", str(ctx.exception))
 
+    def test_validate_contract_number_rejects_huge_ints(self):
+        from moex_spread_lab.core.w0 import _validate_contract_number
+
+        with self.assertRaises(W0Error):
+            _validate_contract_number(10**400, "field")
+
     def test_secret_scan_missing_root_raises(self):
         with tempfile.TemporaryDirectory() as directory, self.assertRaises(W0Error):
             scan_secrets(Path(directory) / "does-not-exist")

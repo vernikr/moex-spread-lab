@@ -29,7 +29,13 @@ class ParameterSpec:
     lamp_steps: tuple[int, ...] = (-2, -1, 1, 2)
 
     def contains(self, value: Any) -> bool:
-        if type(value) not in (int, float) or not math.isfinite(value):
+        if type(value) not in (int, float):
+            return False
+        try:
+            finite = math.isfinite(value)
+        except OverflowError:
+            finite = True  # a plain int too large for float64 is a finite integer
+        if not finite:
             return False
         if self.kind == "int" and type(value) is not int:
             return False

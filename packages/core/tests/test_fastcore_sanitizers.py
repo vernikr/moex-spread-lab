@@ -298,8 +298,9 @@ def test_clean_obj_delegates_to_c99_and_replaces_nonfinite(
     assert cleaned["bad"][:3] == [None, None, None]
     assert isinstance(cleaned["bad"], list)
     nested = cleaned["bad"][3]
-    assert isinstance(nested, tuple)  # C99 keeps tuple containers
-    assert nested[:2] == (1, None)
+    # #312: tuples normalize to lists in both the kernel and the fallback.
+    assert isinstance(nested, list)
+    assert nested[:2] == [1, None]
     assert math.copysign(1.0, nested[2]["x"]) == -1.0
     assert math.copysign(1.0, cleaned["neg_zero"]) == -1.0
     assert (cleaned["text"], cleaned["count"], cleaned["flag"], cleaned["none"]) == (

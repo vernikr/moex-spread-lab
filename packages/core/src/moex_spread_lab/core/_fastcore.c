@@ -599,8 +599,8 @@ fail:
 
 static PyObject *clean_recursive(PyObject *value);
 
-static PyObject *clean_dict_items(PyObject *value, int exact) {
-    PyObject *out = exact ? _PyDict_NewPresized(PyDict_GET_SIZE(value)) : PyDict_New();
+static PyObject *clean_dict_items(PyObject *value) {
+    PyObject *out = _PyDict_NewPresized(PyDict_GET_SIZE(value));
     if (!out) return NULL;
     PyObject *key, *item;
     Py_ssize_t pos = 0;
@@ -622,7 +622,7 @@ static PyObject *clean_dict_items(PyObject *value, int exact) {
 
 static PyObject *clean_sequence_items(PyObject *value, int is_tuple) {
     Py_ssize_t n = is_tuple ? PyTuple_GET_SIZE(value) : PyList_GET_SIZE(value);
-    PyObject *out = is_tuple ? PyTuple_New(n) : PyList_New(n);
+    PyObject *out = PyList_New(n);
     if (!out) return NULL;
     for (Py_ssize_t i = 0; i < n; i++) {
         PyObject *item = is_tuple ? PyTuple_GET_ITEM(value, i) : PyList_GET_ITEM(value, i);
@@ -631,29 +631,31 @@ static PyObject *clean_sequence_items(PyObject *value, int is_tuple) {
             Py_DECREF(out);
             return NULL;
         }
-        if (is_tuple) PyTuple_SET_ITEM(out, i, cleaned);
-        else PyList_SET_ITEM(out, i, cleaned);
+        PyList_SET_ITEM(out, i, cleaned);
     }
     return out;
 }
 
 static PyObject *clean_recursive(PyObject *value) {
-    if (value == Py_None || PyUnicode_CheckExact(value) || PyLong_CheckExact(value) || PyBool_Check(value)) {
-        Py_INCREF(value);
-        return value;
-    }
-    if (PyFloat_Check(value)) {
+    if (Py_EnterRecursiveCall(" in clean_obj()")) return NULL;
+    PyObject *out;
+    if (PyDict_Check(value)) {
+        out = clean_dict_items(value);
+    } else if (PyList_Check(value)) {
+        out = clean_sequence_items(value, 0);
+    } else if (PyTuple_Check(value)) {
+        out = clean_sequence_items(value, 1);
+    } else if (PyFloat_Check(value)) {
         double v = PyFloat_CheckExact(value) ? PyFloat_AS_DOUBLE(value) : PyFloat_AsDouble(value);
-        if (v == -1.0 && PyErr_Occurred()) return NULL;
-        if (!isfinite(v)) Py_RETURN_NONE;
+        if (v == -1.0 && PyErr_Occurred()) out = NULL;
+        else if (isfinite(v)) { Py_INCREF(value); out = value; }
+        else { Py_INCREF(Py_None); out = Py_None; }
+    } else {
         Py_INCREF(value);
-        return value;
+        out = value;
     }
-    if (PyDict_Check(value)) return clean_dict_items(value, PyDict_CheckExact(value));
-    if (PyList_Check(value)) return clean_sequence_items(value, 0);
-    if (PyTuple_Check(value)) return clean_sequence_items(value, 1);
-    Py_INCREF(value);
-    return value;
+    Py_LeaveRecursiveCall();
+    return out;
 }
 
 static PyObject *fast_clean_obj(PyObject *Py_UNUSED(self), PyObject *arg) {

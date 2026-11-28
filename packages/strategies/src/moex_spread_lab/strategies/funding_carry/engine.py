@@ -181,6 +181,7 @@ class _Sim:
     assign_start: str | None
     funding: list[float]
     known_on: list[str]
+    exec_ok: list[bool]
     basis: list[float] | None
     pos: bool = False
     entry_idx: int | None = None
@@ -243,16 +244,40 @@ def _queue_signal(s: _Sim, action: str, reason: str, idx: int, d: str, avail: bo
         s.pending = order
 
 
+def _row_exec_ok(row: dict[str, Any]) -> bool:
+    if "near_volume" not in row and "far_volume" not in row:
+        return True
+    near, far = row.get("near_volume"), row.get("far_volume")
+    if (
+        isinstance(near, bool)
+        or isinstance(far, bool)
+        or not isinstance(near, (int, float))
+        or not isinstance(far, (int, float))
+    ):
+        return False
+    nf, ff = float(near), float(far)
+    return math.isfinite(nf) and math.isfinite(ff) and nf > 0 and ff > 0
+
+
+def _can_enter(s: _Sim, idx: int, d: str, tr_f: float | None, tr_b: float) -> bool:
+    if d >= s.cutoff or (s.assign_start is not None and d >= s.assign_start):
+        return False
+    if tr_f is None or not math.isfinite(tr_f) or tr_f <= 0:
+        return False
+    return s.basis is None or s.basis[idx] <= tr_b
+
+
 def _step_signal(
     s: _Sim, idx: int, d: str, tr_f: float | None, tr_b: float, inc: float, fund: float
 ) -> tuple[float, float]:
     if s.pending is not None:
         return inc, fund
+    exec_idx = idx + s.cfg.delay
     if s.pos:
         reason = _exit_reason(s, idx, d, tr_f, tr_b)
         if not reason:
             return inc, fund
-        avail = idx + s.cfg.delay < len(s.rows)
+        avail = exec_idx < len(s.rows) and s.exec_ok[exec_idx]
         if avail and s.cfg.delay == 0:
             lost = s.cfg.qty * s.funding[idx]
             inc, fund = inc - lost, 0.0
@@ -260,21 +285,15 @@ def _step_signal(
             s.trade_gross -= lost
         _queue_signal(s, "exit", reason, idx, d, avail)
         return inc, fund
-    blocked = d >= s.cutoff or (s.assign_start is not None and d >= s.assign_start)
-    if (
-        blocked
-        or tr_f is None
-        or not math.isfinite(tr_f)
-        or tr_f <= 0
-        or (s.basis is not None and s.basis[idx] > tr_b)
-    ):
+    if not _can_enter(s, idx, d, tr_f, tr_b):
         return inc, fund
     reason = (
         "positive_trailing_funding"
         if s.cfg.variant == "funding_only"
         else "positive_trailing_funding_and_low_basis"
     )
-    _queue_signal(s, "entry", reason, idx, d, idx + 1 < len(s.rows))
+    avail = idx + 1 < len(s.rows) and s.exec_ok[idx] and s.exec_ok[exec_idx]
+    _queue_signal(s, "entry", reason, idx, d, avail)
     return inc, fund
 
 
@@ -403,6 +422,7 @@ def build_carry_strategy(
         assign_start=assign_start,
         funding=[float(r["daily_funding_received_short_near"]) for r in rows],
         known_on=[str(r.get("funding_known_on", "")) for r in rows],
+        exec_ok=[_row_exec_ok(r) for r in rows],
         basis=[float(r["basis_far_minus_near"]) for r in rows]
         if cfg.variant == "basis_median"
         else None,

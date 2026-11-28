@@ -11,13 +11,21 @@ from io import StringIO
 from pathlib import Path
 
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair, ebs_undercovered_margin_charge
-from moex_spread_lab.core.contracts import WindowSnapshot
+from moex_spread_lab.core.contracts import StrategyIntentRun, WindowSnapshot
+from moex_spread_lab.core.settings import ResearchSettings
+from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.cli import register as register_strategy_cli
 from moex_spread_lab.strategies.funding_carry.engine import build_carry_strategy
 from moex_spread_lab.strategies.funding_carry.engine import (
     transaction_cost_profile as _transaction_cost_profile,
 )
-from moex_spread_lab.strategies.funding_carry.plugin import PLUGIN as carry_plugin
+from moex_spread_lab.strategies.funding_carry.intents import carry_settlement_intents
+from moex_spread_lab.strategies.funding_carry.plugin import (
+    PLUGIN as carry_plugin,
+)
+from moex_spread_lab.strategies.funding_carry.plugin import (
+    FundingCarryPlugin,
+)
 from moex_spread_lab.strategies.funding_carry.study import (
     CarryError,
     CarryStrategyError,
@@ -388,6 +396,107 @@ class CarryTests(unittest.TestCase):
         for lb in (10, 20):
             run = carry_plugin.evaluate_intents(snap, {"lookback": lb}, "same_day_settlement")
             self.assertEqual(run.intents, ())
+
+    def test_carry_plugin_and_engine_respect_zero_volume_sessions(self):
+        contracts_path = write_near_far_contracts(
+            self.root / "contracts_vol.json",
+            near={"secid": "CNYRUBF"},
+            far={"secid": "CRZ6", "expiry": "2026-12-17"},
+        )
+        bench_path = write_lqdt_lineage(self.root / "bench_vol.json", {"2026-01-01": 1.0})
+        dates = [f"2026-02-{d:02d}" for d in range(1, 8)]
+        vols = [500, 0, 0, 0, 0, 0, 0]
+        study = build_carry_study(
+            source(
+                "CNYRUBF",
+                [
+                    {"TRADEDATE": d, "SETTLEPRICE": 12.0, "SWAPRATE": 0.01, "VOLUME": v}
+                    for d, v in zip(dates, vols, strict=True)
+                ],
+            ),
+            source(
+                "CRZ6",
+                [
+                    {"TRADEDATE": d, "SETTLEPRICE": 12.2, "SWAPRATE": 0.0, "VOLUME": v}
+                    for d, v in zip(dates, vols, strict=True)
+                ],
+            ),
+            contracts_path,
+            near="CNYRUBF",
+            far="CRZ6",
+        )
+        snap = WindowSnapshot(
+            universe="pair_screen",
+            pair="CNYRUBF/CRZ6",
+            near="CNYRUBF",
+            far="CRZ6",
+            timeframe="1d",
+            carry_study=study,
+            benchmark=bench_path,
+            extra={"contracts_path": contracts_path, "transaction_cost_scenario": "tariff"},
+        )
+        strict = ResearchSettings(allow_failed_volume=False, allow_failed_capital=True)
+        self.assertFalse(carry_plugin.check_compatibility(snap, strict).compatible)
+        self.assertEqual(carry_settlement_intents(carry_plugin, snap, {"lookback": 5}), [])
+
+        class _StaticCarryPlugin(FundingCarryPlugin):
+            def __init__(self, items: list[dict[str, object]]) -> None:
+                self._items = tuple(items)
+
+            def evaluate_intents(self, window, params, fill):
+                return StrategyIntentRun(self.strategy_id, fill, dict(params), self._items)
+
+        days = [f"2026-01-0{i}" for i in range(1, 6)]
+        rows = [
+            {
+                "date": day,
+                "near_settle": 100 + i,
+                "far_settle": 200 + i,
+                "near_volume": 100,
+                "far_volume": 100,
+            }
+            for i, day in enumerate(days)
+        ]
+        trade = {
+            "side": "short_spread",
+            "entry_date": days[1],
+            "exit_date": days[3],
+            "signal_date": days[0],
+            "reason": "rule_exit",
+            "open_at_end": False,
+        }
+        snap_exp = WindowSnapshot(
+            universe="pair_screen",
+            pair="N/F",
+            near="N",
+            far="F",
+            carry_study={"rows": [dict(r) for r in rows]},
+            contracts={"F": {"expiry": "2026-01-05"}},
+        )
+        terminal = {
+            **trade,
+            "exit_date": days[-1],
+            "reason": "open_at_data_end_no_executable_exit",
+            "open_at_end": True,
+        }
+        for bad_item in (terminal, trade):
+            with self.assertRaises(W0Error):
+                carry_settlement_intents(_StaticCarryPlugin([bad_item]), snap_exp, {"lookback": 5})
+
+        future_rows = [dict(r) for r in rows]
+        future_rows[2]["funding_known_on"] = "2026-01-09"
+        with self.assertRaises(W0Error):
+            carry_settlement_intents(
+                _StaticCarryPlugin([trade]),
+                WindowSnapshot(
+                    universe="pair_screen",
+                    pair="N/F",
+                    near="N",
+                    far="F",
+                    carry_study={"rows": future_rows},
+                ),
+                {"lookback": 5},
+            )
 
 
 if __name__ == "__main__":

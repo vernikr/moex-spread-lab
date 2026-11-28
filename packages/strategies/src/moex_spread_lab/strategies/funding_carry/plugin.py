@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
@@ -26,13 +27,13 @@ _SCHEMA = (ParameterSpec("lookback", "Окно · набл.", "int", 20, 5, 80, 
 
 
 class FundingCarryPlugin:
-    strategy_id = "funding_only"
-    family_id = "funding_only"
-    label_ru = "Фондирование перпетуального свопа (carry)"
-    short_label_ru = "фондирование"
-    supported_universes = frozenset({PAIR_UNIVERSE})
-    supported_fills = ("same_day_settlement",)
-    requires_daily_bars = True
+    strategy_id: str = "funding_only"
+    family_id: str = "funding_only"
+    label_ru: str = "Фондирование перпетуального свопа (carry)"
+    short_label_ru: str = "фондирование"
+    supported_universes: frozenset[str] = frozenset({PAIR_UNIVERSE})
+    supported_fills: tuple[str, ...] = ("same_day_settlement",)
+    requires_daily_bars: bool = True
 
     # Declarative adapter metadata (consumed via moex_spread_lab.core.contracts helpers).
     proof_adapter: Literal["carry_settlement_intents.v1"] = "carry_settlement_intents.v1"
@@ -61,14 +62,12 @@ class FundingCarryPlugin:
         study = window.carry_study
         if not study or not isinstance(study.get("rows"), list) or len(study["rows"]) < 2:
             return CompatibilityVerdict(False, "carry study rows are unavailable")
-        if settings is not None and not settings.allow_failed_volume:
-            volumes = [
-                min(float(r["near_volume"]), float(r["far_volume"]))
-                for r in study["rows"]
-                if (r.get("near_volume") or 0) > 0 and (r.get("far_volume") or 0) > 0
-            ]
-            if not volumes or min(volumes) < MIN_DAILY_VOLUME:
-                return CompatibilityVerdict(False, "Не пройдено правило ликвидности на обучении.")
+        if (
+            settings is not None
+            and not settings.allow_failed_volume
+            and any(_row_min_volume(r) < MIN_DAILY_VOLUME for r in study["rows"])
+        ):
+            return CompatibilityVerdict(False, "Не пройдено правило ликвидности на обучении.")
         return CompatibilityVerdict(True)
 
     def evaluate_intents(
@@ -114,7 +113,11 @@ class FundingCarryPlugin:
             metrics_only=True,
         )
         last_date = report["daily"][-1]["date"]
-        reasons = {(sig["date"], sig["action"]): sig.get("reason") for sig in report["signals"]}
+        reasons = {
+            (sig["date"], sig["action"]): sig.get("reason")
+            for sig in report["signals"]
+            if sig.get("execution_available")
+        }
         intents = tuple(
             {
                 "side": "short_spread",
@@ -145,6 +148,21 @@ class FundingCarryPlugin:
         """Funding entries come from the rate history, so only dates are bandable."""
         self.validate_parameters(params)
         return [EntryBandPoint(date=str(row.get("date", ""))) for row in series]
+
+
+def _row_min_volume(row: Mapping[str, Any]) -> float:
+    near, far = row.get("near_volume"), row.get("far_volume")
+    if (
+        isinstance(near, bool)
+        or isinstance(far, bool)
+        or not isinstance(near, (int, float))
+        or not isinstance(far, (int, float))
+    ):
+        return 0.0
+    nf, ff = float(near), float(far)
+    if not (math.isfinite(nf) and math.isfinite(ff)):
+        return 0.0
+    return min(nf, ff)
 
 
 PLUGIN = FundingCarryPlugin()

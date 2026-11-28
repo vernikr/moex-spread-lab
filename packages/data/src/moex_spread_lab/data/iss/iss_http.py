@@ -25,7 +25,7 @@ PROJECT_RIGHTS_STATUS = "accepted_project_assumption_personal_use"
 HISTORICAL_SPECIFICATION_STATUS = "current_snapshot_fallback_assumed"
 CANDLE_INTERVAL_LABELS: dict[int, str] = {
     1: "1m",
-    4: "4h",
+    4: "1q",
     7: "1w",
     10: "10m",
     60: "1h",

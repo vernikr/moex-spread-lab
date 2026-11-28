@@ -18,7 +18,59 @@ from moex_spread_lab.data.iss.catalog import (
     normalize_iss_intake,
     write_timeframe_inventory,
 )
-from moex_spread_lab.data.iss.iss_http import IssIntakeError, fetch_json_with_raw, rows
+from moex_spread_lab.data.iss.iss_http import (
+    CANDLE_INTERVAL_LABELS,
+    IssIntakeError,
+    candles_url,
+    fetch_json_with_raw,
+    rows,
+)
+from moex_spread_lab.data.lake.refresh_merge import RefreshTarget
+
+
+def test_candle_interval_labels_match_iss_durations():
+    assert CANDLE_INTERVAL_LABELS == {
+        1: "1m",
+        10: "10m",
+        60: "1h",
+        24: "1d",
+        7: "1w",
+        31: "1mo",
+        4: "1q",
+    }
+    for interval, label in CANDLE_INTERVAL_LABELS.items():
+        row = normalize_candles(
+            candles([[1, 1, 1, 1, 1, 1, "2026-01-01", "2026-03-31"]]),
+            secid="TEST",
+            interval=interval,
+            url="u",
+            received_at="t",
+            raw_sha256="h",
+        )[0]
+        assert row["timeframe"] == label
+        assert RefreshTarget("TEST", interval).timeframe == label
+
+
+def test_quarterly_cached_page_uses_current_timeframe(tmp_path):
+    url = candles_url("https://iss.moex.com", "RFUD", "TEST", 4, "2026-01-01", "2026-03-31", 0)
+    path = tmp_path / "TEST" / "4" / "page-000000.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"url": url, "rows": [{"begin": "2026-01-01", "timeframe": "4h"}]}))
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("cache should be reused")
+
+    result = fetch_candle_series(
+        secid="TEST",
+        interval=4,
+        from_date="2026-01-01",
+        till_date="2026-03-31",
+        cache_dir=tmp_path,
+        delay_seconds=0,
+        opener=no_network,
+    )
+    assert result["timeframe"] == "1q"
+    assert result["rows"][0]["timeframe"] == "1q"
 
 
 def block(columns, data):

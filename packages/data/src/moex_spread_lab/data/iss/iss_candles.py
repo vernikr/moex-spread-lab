@@ -167,7 +167,10 @@ def _load_or_fetch_page_rows(
                 json.dumps(page_result, ensure_ascii=False, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-    return cast(list[dict[str, Any]], page_result["rows"])
+    rows = cast(list[dict[str, Any]], page_result["rows"])
+    if req.interval == 4:
+        return [{**row, "timeframe": CANDLE_INTERVAL_LABELS[4]} for row in rows]
+    return rows
 
 
 def _paginate_candle_rows(req: _CandleSeriesRequest) -> tuple[list[dict[str, Any]], int]:

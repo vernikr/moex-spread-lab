@@ -300,3 +300,22 @@ def test_disabled_and_exception_cleanup(monkeypatch):
         raise ValueError("failure")
     assert sampler is not None and not sampler.thread.is_alive()
     assert sampler.snapshot()["samples"] >= 1
+
+
+def test_probe_p95_reports_the_maximum_honestly_for_small_repeats() -> None:
+    """#346: with `repeat` capped at 10 the nearest-rank p95 *is* the max, so say so."""
+    durations = [float(v) for v in range(1, 11)]
+    assert routes_dev.p95(durations) == max(durations) == 10.0
+    assert routes_dev.p95([5.0]) == 5.0
+    wide = [float(v) for v in range(1, 101)]
+    assert routes_dev.p95(wide) == 95.0
+
+
+def test_probe_telemetry_flags_p95_as_max_and_reports_max_ms(server) -> None:
+    port, _ = server
+    status, raw = request(port, "POST", "/api/dev/probe", {"action": "catalog", "repeat": 3})
+    assert status == 200, raw
+    telemetry = json.loads(raw)["telemetry"]
+    assert telemetry["p95_is_max"] is True
+    assert telemetry["max_ms"] == max(telemetry["wall_ms"])
+    assert telemetry["p95_ms"] == telemetry["max_ms"]

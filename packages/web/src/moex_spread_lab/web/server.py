@@ -139,7 +139,9 @@ def serve(inputs: _pair_screener.ScreenerInputs, port: int = 8765, host: str = "
     store = ScreenerStore(inputs)
     server = ThreadingHTTPServer((host, port), make_handler(store))
     try:
-        print(f"Local research screener: http://{host}:{server.server_port}", flush=True)
+        shown = "127.0.0.1" if host == "0.0.0.0" else host
+        scope = " (listening on all interfaces)" if host == "0.0.0.0" else ""
+        print(f"Local research screener: http://{shown}:{server.server_port}{scope}", flush=True)
         server.serve_forever()
     finally:
         server.server_close()

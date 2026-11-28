@@ -364,6 +364,11 @@ def _merge_phases(total: dict[str, float], elapsed: dict[str, float]) -> None:
             total[key] = round(total.get(key, 0) + value, 2)
 
 
+def p95(durations: list[float]) -> float:
+    """Nearest-rank p95; with `repeat <= 10` it coincides with the max, which the caller flags."""
+    return sorted(durations)[math.ceil(len(durations) * 0.95) - 1]
+
+
 def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
     action, payload, override, repeat, warmup, profile, mode, sample_rss = _options(request)
     settings = settings_with_override(store.inputs.root, override)
@@ -399,7 +404,9 @@ def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
         "operation_phase_ms": {name: round(ms, 2) for name, ms in phase_metrics.items()},
         "min_ms": min(durations),
         "median_ms": statistics.median(durations),
-        "p95_ms": sorted(durations)[math.ceil(len(durations) * 0.95) - 1],
+        "p95_ms": p95(durations),
+        "p95_is_max": len(durations) < 20,
+        "max_ms": max(durations),
         "cpu_user_ms": round((usage.ru_utime - usage_start.ru_utime) * 1000, 2),
         "cpu_sys_ms": round((usage.ru_stime - usage_start.ru_stime) * 1000, 2),
         "max_rss_kb": round(usage.ru_maxrss / 1024)

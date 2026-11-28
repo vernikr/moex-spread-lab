@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 import math
 import subprocess
@@ -381,6 +382,28 @@ class WebHttpRoutesTests(unittest.TestCase):
             self.assertEqual(self._request("POST", path, body={})[0], 404, path)
         for ok_path in ("/api/timeframes", "/api/settings"):
             self.assertEqual(self._request("GET", ok_path)[0], 200, ok_path)
+
+    def test_serve_prints_a_connectable_url_when_bound_to_all_interfaces(self) -> None:
+        """#360: `0.0.0.0` is a bind marker, not an address a browser can open."""
+        printed: list[str] = []
+
+        class StopServer(ThreadingHTTPServer):
+            def serve_forever(self, poll_interval: float = 0.5) -> None:
+                raise KeyboardInterrupt
+
+        with (
+            mock.patch.object(web_server, "ThreadingHTTPServer", StopServer),
+            mock.patch.object(
+                builtins, "print", lambda *a, **k: printed.append(" ".join(map(str, a)))
+            ),
+            mock.patch.dict("os.environ", {"MSL_ALLOWED_HOSTS": PREVIEW}),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            web_server.serve(ScreenerInputs(Path.cwd()), port=0, host="0.0.0.0")
+        banner = next(line for line in printed if "Local research screener" in line)
+        self.assertNotIn("http://0.0.0.0", banner)
+        self.assertIn("http://127.0.0.1:", banner)
+        self.assertIn("all interfaces", banner)
 
     def test_spoofed_loopback_host_from_a_remote_peer_is_rejected(self) -> None:
         """#350: the `Host` header alone must not admit a non-loopback peer."""

@@ -114,6 +114,14 @@ class WebPackageArchitectureTests(unittest.TestCase):
             ]
             self.assertEqual([record["run_id"] for record in records], ["old", "new"])
 
+    def test_json_media_type_is_case_insensitive(self) -> None:
+        handler = SimpleNamespace(
+            headers={"Content-Type": "Application/JSON; charset=utf-8", "Content-Length": "2"},
+            rfile=BytesIO(b"{}"),
+            drain_body=lambda _size: None,
+        )
+        self.assertEqual(dispatch._read_selection(handler, "/api/settings"), {})
+
     def test_unsupported_media_type_drains_declared_body(self) -> None:
         handler = SimpleNamespace(
             headers={"Content-Type": "text/plain", "Content-Length": "7"},

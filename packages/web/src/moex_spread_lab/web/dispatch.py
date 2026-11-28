@@ -77,7 +77,8 @@ def _declared_body_size(handler: Any) -> int:
 
 
 def _read_selection(handler: Any, path: str) -> Any:
-    if handler.headers.get("Content-Type", "").split(";", 1)[0] != "application/json":
+    media_type = handler.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+    if media_type != "application/json":
         handler.drain_body(_declared_body_size(handler))
         raise _UnsupportedMediaType
     size = int(handler.headers.get("Content-Length", "0"))

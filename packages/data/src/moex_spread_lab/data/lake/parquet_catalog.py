@@ -93,7 +93,9 @@ def upsert_manifest(
     previous = next(
         (entry for entry in datasets if entry.get("dataset_id") == record["dataset_id"]), None
     )
-    if previous is not None and previous != record:
+    if previous is not None and {k: v for k, v in previous.items() if k != "created_at"} != {
+        k: v for k, v in record.items() if k != "created_at"
+    }:
         revisions = manifest.setdefault("dataset_revisions", [])
         if not isinstance(revisions, list):
             raise DataLakeError("data-lake manifest dataset_revisions must be a list")

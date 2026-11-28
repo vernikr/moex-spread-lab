@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Iterable
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from moex_spread_lab.core.w0 import sha256_file
@@ -26,7 +28,8 @@ class MarketDataStore:
         self.parquet = ParquetBarStore(self.root, lake_root)
         self.legacy = LegacyJsonBarStore()
         self.sealed_h1 = SealedH1Reader(self.root)
-        self._cache: dict[tuple[Any, ...], BarSeries] = {}
+        self._cache: OrderedDict[tuple[Any, ...], BarSeries] = OrderedDict()
+        self._cache_lock = Lock()
         self._sha_cache: dict[tuple[str, int, int], str] = {}
 
     def _legacy_sha256(self, legacy_path: Path) -> str:
@@ -130,9 +133,17 @@ class MarketDataStore:
         except DataLakeError:
             record = None
         key = self._cache_key(legacy_path, requested_columns, record)
-        if key is not None and key in self._cache:
-            return self._cache[key]
+        if key is not None:
+            with self._cache_lock:
+                cached = self._cache.get(key)
+                if cached is not None:
+                    self._cache.move_to_end(key)
+                    return cached
         series = self._read_unsealed(legacy_path, requested_columns, record)
         if key is not None:
-            self._cache[key] = series
+            with self._cache_lock:
+                self._cache[key] = series
+                self._cache.move_to_end(key)
+                while len(self._cache) > 128:
+                    self._cache.popitem(last=False)
         return series

@@ -1,6 +1,7 @@
 import argparse
 import importlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,7 @@ import pytest
 
 from moex_spread_lab.data import cli
 from moex_spread_lab.data.lake.bar_types import DataLakeError
+from moex_spread_lab.data.lake.market_store import MarketDataStore
 from moex_spread_lab.data.lake.parquet_store import ParquetBarStore
 
 
@@ -55,6 +57,40 @@ class DataLakeTests(unittest.TestCase):
         }
         path.write_text(json.dumps(payload), encoding="utf-8")
         return path
+
+    def test_unsealed_cache_is_bounded_across_rewrites(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = self._legacy(root)
+            store = MarketDataStore(root)
+            for index in range(150):
+                payload = json.loads(path.read_text())
+                payload["rows"][0]["close"] = index + 100
+                path.write_text(json.dumps(payload))
+                timestamp = 1_700_000_000_000_000_000 + index * 1_000_000_000
+                os.utime(path, ns=(timestamp, timestamp))
+                assert store.read(path, columns=("begin", "close")).rows[0]["close"] == index + 100
+            assert len(store._cache) <= 128
+            assert store.read(path).rows[0]["close"] == 249
+
+    def test_identical_reimport_does_not_create_timestamp_only_revision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = self._legacy(root)
+            store = ParquetBarStore(root)
+            original = store.import_legacy(path)
+            manifest = json.loads(store.manifest_path.read_text())
+            manifest["datasets"][0]["created_at"] = "2000-01-01T00:00:00+00:00"
+            store.manifest_path.write_text(json.dumps(manifest))
+            store.import_legacy(path, replace=True)
+            assert store.read_manifest().get("dataset_revisions", []) == []
+            payload = json.loads(path.read_text())
+            payload["coverage_status"] = "changed"
+            path.write_text(json.dumps(payload))
+            store.import_legacy(path, replace=True)
+            revisions = store.read_manifest()["dataset_revisions"]
+            assert len(revisions) == 1
+            assert revisions[0]["record"]["legacy_sha256"] == original["legacy_sha256"]
 
     def test_import_preserves_rows_and_deduplicates_page_provenance(self):
         with tempfile.TemporaryDirectory() as directory:

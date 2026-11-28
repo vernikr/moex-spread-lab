@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .w0 import scan_secrets
+from .w0 import W0Error, scan_secrets
 
 
 def register(subparsers: Any) -> None:
@@ -20,7 +20,11 @@ def register(subparsers: Any) -> None:
 
 def run(args: Any) -> int:
     if args.command == "secret-scan":
-        findings = scan_secrets(args.root.resolve(), tracked_only=args.tracked_only)
+        try:
+            findings = scan_secrets(args.root.resolve(), tracked_only=args.tracked_only)
+        except W0Error as exc:
+            print(json.dumps({"status": "error", "detail": str(exc)}, sort_keys=True))
+            return 2
         if findings:
             print(json.dumps({"status": "failed", "findings": findings}, sort_keys=True))
             return 1

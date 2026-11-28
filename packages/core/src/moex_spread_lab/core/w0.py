@@ -270,6 +270,8 @@ def scan_secrets(root: Path, *, tracked_only: bool = False) -> list[dict[str, st
 def git_tracked_files(root: Path) -> list[Path]:
     try:
         output = subprocess.check_output(["git", "ls-files", "-z"], cwd=root)
-    except (OSError, subprocess.CalledProcessError):
-        return []
-    return [root / item for item in output.decode().split("\0") if item]
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise W0Error(
+            f"cannot list tracked files in {root}: {exc}; refusing to report a clean scan"
+        ) from exc
+    return [root / item for item in os.fsdecode(output).split("\0") if item]

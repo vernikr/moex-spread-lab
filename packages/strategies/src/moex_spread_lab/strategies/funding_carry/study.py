@@ -287,7 +287,7 @@ def build_carry_study(
         regimes,
         funding_marks,
     )
-    funding_values = [float(row["daily_funding_received_short_near"]) for row in rows]
+    funding_values = [float(row["daily_funding_received_short_near"]) for row in rows[1:]]
     return {
         "schema_version": CARRY_SCHEMA,
         "release_state": "exploratory_inconclusive",

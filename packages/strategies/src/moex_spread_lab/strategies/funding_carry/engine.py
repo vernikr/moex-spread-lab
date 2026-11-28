@@ -180,6 +180,7 @@ class _Sim:
     cutoff: str
     assign_start: str | None
     funding: list[float]
+    signal_funding: list[float]
     known_on: list[str]
     exec_ok: list[bool]
     basis: list[float] | None
@@ -344,10 +345,16 @@ def _push_daily(
     )
 
 
+def _observed_row_funding(row: dict[str, Any]) -> float:
+    if "near_swaprate" in row and "near_lot_size" in row:
+        return _round(float(row["near_swaprate"]) * float(row["near_lot_size"]))
+    return float(row["daily_funding_received_short_near"])
+
+
 def _window_stats(s: _Sim, idx: int, d: str) -> tuple[float | None, float]:
     w0 = idx - s.cfg.warmup
     tr_f = (
-        statistics.fmean(s.funding[w0:idx])
+        statistics.fmean(s.signal_funding[w0:idx])
         if all(s.known_on[j] < d for j in range(w0, idx))
         else None
     )
@@ -421,6 +428,7 @@ def build_carry_strategy(
         cutoff=cutoff,
         assign_start=assign_start,
         funding=[float(r["daily_funding_received_short_near"]) for r in rows],
+        signal_funding=[_observed_row_funding(r) for r in rows],
         known_on=[str(r.get("funding_known_on", "")) for r in rows],
         exec_ok=[_row_exec_ok(r) for r in rows],
         basis=[float(r["basis_far_minus_near"]) for r in rows]

@@ -498,6 +498,59 @@ class CarryTests(unittest.TestCase):
                 {"lookback": 5},
             )
 
+    def test_row_zero_swaprate_preserved_in_post_warmup_signal_and_excluded_from_summary_zeros(
+        self,
+    ):
+        contracts_path = write_near_far_contracts(
+            self.root / "contracts_r0.json",
+            near={"secid": "CNYRUBF"},
+            far={"secid": "CRZ6", "expiry": "2026-12-17"},
+        )
+        bench_path = write_lqdt_lineage(self.root / "bench_r0.json", {"2026-01-01": 1.0})
+        dates = [f"2026-02-{d:02d}" for d in range(1, 8)]
+        swaps = [-0.050, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005]
+        study = build_carry_study(
+            source(
+                "CNYRUBF",
+                [
+                    {"TRADEDATE": d, "SETTLEPRICE": 12.0, "SWAPRATE": sr, "VOLUME": 500}
+                    for d, sr in zip(dates, swaps, strict=True)
+                ],
+            ),
+            source(
+                "CRZ6",
+                [
+                    {"TRADEDATE": d, "SETTLEPRICE": 12.2, "SWAPRATE": 0.0, "VOLUME": 500}
+                    for d in dates
+                ],
+            ),
+            contracts_path,
+            near="CNYRUBF",
+            far="CRZ6",
+        )
+        self.assertEqual(study["summary"]["mean_daily_funding_received"], 5.0)
+        self.assertEqual(study["summary"]["zero_funding_rows"], 0)
+        self.assertEqual(study["summary"]["positive_funding_rows"], 6)
+        strat = build_carry_strategy(
+            study,
+            bench_path,
+            contracts_path,
+            warmup_observations=5,
+            strategy_variant="funding_only",
+            execution_delay_rows=0,
+        )
+        self.assertEqual(
+            strat["signals"],
+            [
+                {
+                    "date": "2026-02-07",
+                    "action": "entry",
+                    "reason": "positive_trailing_funding",
+                    "execution_available": False,
+                }
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -38,6 +38,31 @@ def _module_level_assignments(path: Path) -> set[str]:
     return names
 
 
+def test_expired_quarter_grid_has_no_interior_gaps() -> None:
+    # Listed endpoints bound the admissible expired maturities, not issue-date estimates.
+    families = {
+        "CNYRUBF": ("CR", "CRM2", "CRU6"),
+        "GLDRUBF": ("GL", "GLU3", "GLU6"),
+        "IMOEXF": ("MM", "MMZ3", "MMU6"),
+        "GAZPF": ("GZ", "GZZ4", "GZU6"),
+        "SBERF": ("SR", "SRZ4", "SRU6"),
+        "RGBIF": ("RB", "RBH6", "RBU6"),
+        "USDRUBF": ("Si", "SiM2", "SiU6"),
+        "SLVRUBF": ("S2", "S2M6", "S2U6"),
+        "EURRUBF": ("Eu", "EuM2", "EuU6"),
+    }
+    for near, (prefix, first, last) in families.items():
+        grid = [f"{prefix}{quarter}{year}" for year in range(2, 7) for quarter in "HMUZ"]
+        expected = set(grid[grid.index(first) : grid.index(last) + 1])
+        actual = set(
+            data_universe.GLD_HISTORICAL_FAR
+            if near == "GLDRUBF"
+            else data_universe.HISTORICAL_FAR_BY_NEAR[near]
+        )
+        assert actual == expected, (near, sorted(expected - actual), sorted(actual - expected))
+    assert "BTCUSDF" not in data_universe.HISTORICAL_FAR_BY_NEAR
+
+
 def test_data_universe_is_the_canonical_public_surface() -> None:
     for name in (*CONCRETE_NAMES, "PAIR_UNIVERSE", "CALENDAR_UNIVERSE"):
         assert name in data_universe.__all__, name

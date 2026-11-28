@@ -9,7 +9,7 @@ from typing import Any, cast
 from moex_spread_lab.core.w0 import W0Error
 
 from .account_risk import DEFAULT_STRESS_VM_BUFFER, DEFAULT_UNCERTAINTY_BUFFER
-from .costs import side_cost, tariff_profile
+from .costs import TAKER_RATE_PERCENT, side_cost, tariff_profile
 
 _COST_KEYS = ("exchange_clearing", "broker", "slippage")
 
@@ -121,7 +121,7 @@ class Terms:
             self.rate = positive(contract.get("margin_rate"), "коэффициент ГО")
             self.tick_size = positive(contract.get("tick_size"), "шаг цены")
             self.reference_point = positive(contract.get("point_value_rub"), "стоимость пункта")
-            self.group: str = contract["tariff_group"]
+            self.group = self._tariff_group(contract)
         else:
             instrument = proof["instrument"]
             try:
@@ -132,6 +132,12 @@ class Terms:
             for leg in self.legs:
                 positive(leg.get("tick_size"), "шаг цены ноги")
                 positive(leg.get("tick_value"), "стоимость шага ноги")
+
+    def _tariff_group(self, contract: dict[str, Any]) -> str:
+        group = contract.get("tariff_group")
+        if not isinstance(group, str) or group not in TAKER_RATE_PERCENT:
+            raise W0Error(f"Нет тарифной группы у контракта для расчёта размера: {group!r}.")
+        return group
 
     def point(self, index: int) -> float:
         return (

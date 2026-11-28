@@ -189,6 +189,19 @@ class FundedSizingTests(unittest.TestCase):
         self.assertEqual(list(second[2]), [0.0, 10.0])
         self.assertIs(_get_or_build_scan_columns(rows_b, terms, marks, cache, "cut"), second)
 
+    def test_a_native_contract_without_a_known_tariff_group_fails_closed(self):
+        cases = (
+            ("missing", lambda contract: contract.pop("tariff_group")),
+            ("unknown", lambda contract: contract.update(tariff_group="nope")),
+        )
+        for label, mutate in cases:
+            for entries in ((), ((0, 1),)):
+                with self.subTest(label=label, entries=entries):
+                    unit, marks = native_proof(entries=entries)
+                    mutate(unit["contract"])
+                    with self.assertRaises(W0Error):
+                        size_proof(unit, marks, ResearchSettings(), {})
+
     def test_a_missing_exit_mark_fails_closed(self):
         for metrics_only in (False, True):
             with self.subTest(metrics_only=metrics_only):

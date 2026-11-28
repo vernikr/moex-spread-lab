@@ -82,6 +82,47 @@ def test_quarterly_cached_page_uses_current_timeframe(tmp_path):
     assert result["rows"][0]["timeframe"] == "1q"
 
 
+@pytest.mark.parametrize("next_page", ["repeat", "overlap", "older", "advance"])
+def test_candle_pages_must_advance_past_previous_page(next_page):
+    def candle(index):
+        stamp = f"2026-01-01 10:{index // 60:02d}:{index % 60:02d}"
+        return [1, 1, 1, 1, 1, 1, stamp, stamp]
+
+    first = [candle(index) for index in range(500)]
+    pages = {
+        "repeat": first,
+        "overlap": [first[-1]],
+        "older": [first[100]],
+        "advance": [candle(500)],
+    }
+    calls = []
+
+    def opener(request, timeout):
+        start = int(parse_qs(urlparse(request.full_url).query)["start"][0])
+        calls.append(start)
+        if len(calls) > 2:
+            raise AssertionError("repeated page was not rejected")
+        return _Response(json.dumps(candles(first if start == 0 else pages[next_page])).encode())
+
+    def fetch():
+        return fetch_candle_series(
+            secid="TEST",
+            interval=1,
+            from_date="2026-01-01",
+            till_date="2026-01-02",
+            opener=opener,
+            delay_seconds=0,
+            retries=0,
+        )
+
+    if next_page == "advance":
+        assert fetch()["row_count"] == 501
+    else:
+        with pytest.raises(IssIntakeError, match="candle pagination did not advance"):
+            fetch()
+    assert calls == [0, 500]
+
+
 def block(columns, data):
     return {"columns": columns.split(), "data": data}
 

@@ -180,7 +180,7 @@ def _paginate_candle_rows(req: _CandleSeriesRequest) -> tuple[list[dict[str, Any
     while True:
         start = page * CANDLE_PAGE_SIZE
         rows = _load_or_fetch_page_rows(req, series_cache, page, start)
-        if rows and all_rows and rows[0]["begin"] == all_rows[-1]["begin"]:
+        if rows and all_rows and rows[0]["begin"] <= all_rows[-1]["begin"]:
             raise IssIntakeError(
                 f"candle pagination did not advance: {req.secid} interval={req.interval} start={start}"
             )

@@ -4,7 +4,9 @@ from datetime import date
 from typing import ClassVar
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
+from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data import universe as data_universe
+from moex_spread_lab.strategies import discover_strategies
 from moex_spread_lab.strategies.calendar import contracts
 from moex_spread_lab.strategies.calendar.calendar_spreads import (
     build_windows,
@@ -13,6 +15,7 @@ from moex_spread_lab.strategies.calendar.calendar_spreads import (
     stress_ok,
 )
 from moex_spread_lab.strategies.calendar.proof_payload import build_proof_payload
+from moex_spread_lab.strategies.calendar.proof_runner import execute_calendar_proof
 from synthetic_history import iso_weekdays_until as _days
 
 TERMS = {"mult": 1.0, "margin_rate": 0.15}
@@ -254,6 +257,63 @@ class ProofPayloadTests(unittest.TestCase):
         self.assertEqual(sizing["ledger"], [])
         self.assertEqual(sizing["summary"], {})
         self.assertIn("far_price", sizing["trades"][0]["entry"])
+
+    def test_execute_calendar_proof_honors_threshold_pp_and_rejects_bad_params(self):
+        days = [f"2026-01-{day:02d}" for day in range(1, 28)]
+        histories = {
+            "SRH6": {
+                **{day: _row(day, 30000.0) for day in days},
+                "2026-03-19": _row("2026-03-19", 30000.0),
+            },
+            "SRM6": {
+                **{day: _row(day, 30500.0) for day in days},
+                "2026-06-18": _row("2026-06-18", 30500.0),
+            },
+            "SRH6SRM6": {day: _row(day, 500.0) for day in days},
+            "SRU6": {"2026-09-17": _row("2026-09-17", 31000.0)},
+        }
+        sr_terms = {**TERMS, "tick_size": 1.0, "tick_value": 1.0, "reference_contract": "SRH6"}
+        window = build_windows(histories, "SR", sr_terms, (["2025-12-30"], {"2025-12-30": 0.04}))[0]
+        data = {
+            "terms": {"SR": sr_terms},
+            "benchmark": dict.fromkeys(days, 1.5),
+            "benchmark_dates": list(days),
+        }
+        registry = discover_strategies()
+
+        def run(strategy: str, raw_params: dict) -> dict:
+            return execute_calendar_proof(
+                data,
+                window,
+                {
+                    "asset": "SR",
+                    "pair": window["pair"],
+                    "timeframe": "1d",
+                    "strategy": strategy,
+                    "fill_label": "next_open",
+                    "quantity": 1,
+                    "slippage": 1.0,
+                    "raw_params": raw_params,
+                    "registry": registry,
+                },
+            )
+
+        high = run("convergence_to_ruonia", {"threshold_pp": 9.0})
+        self.assertEqual(high["selection"]["parameters"]["threshold_pp"], 9.0)
+        self.assertEqual(high["trades"], [])
+
+        low = run("convergence_to_ruonia", {"threshold_pp": 2.0})
+        self.assertEqual(low["selection"]["parameters"]["threshold_pp"], 2.0)
+        self.assertEqual(len(low["trades"]), 1)
+
+        for strategy, bad in (
+            ("convergence_to_ruonia", {"threshold_pp": float("nan")}),
+            ("convergence_to_ruonia", {"threshold_pp": True}),
+            ("zscore_mean_reversion", {"window": 10.9}),
+            ("zscore_mean_reversion", {"window": True}),
+        ):
+            with self.subTest(strategy=strategy, bad=bad), self.assertRaises(W0Error):
+                run(strategy, bad)
 
 
 def test_asset_catalog_is_reexported_from_contracts_not_redefined() -> None:

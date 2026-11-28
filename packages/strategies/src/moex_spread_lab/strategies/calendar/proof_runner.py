@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any, TypedDict, cast
 
@@ -122,9 +123,12 @@ def _validate_plugin_params(
     pair: str,
     timeframe: str,
     strategy: str,
-    raw_params: dict[str, Any],
+    raw_params: Any,
     registry: StrategyRegistry,
 ) -> dict[str, Any]:
+    if not isinstance(raw_params, Mapping):
+        raise W0Error("Некорректные параметры плагина.")
+    raw_map = cast(Mapping[str, Any], raw_params)
     context = _instrument_context(asset, pair, timeframe)
     plugin = registry.get(strategy)
     if plugin.requires_daily_bars and timeframe != "1d":
@@ -134,10 +138,10 @@ def _validate_plugin_params(
     if (
         len(names) != len(set(names))
         or not any(spec.tunable for spec in schema)
-        or set(raw_params) - set(names)
+        or set(raw_map) - set(names)
     ):
         raise W0Error("Некорректная схема параметров плагина.")
-    plugin_params: Any = plugin.validate_parameters(dict(raw_params), context)
+    plugin_params: Any = plugin.validate_parameters(dict(raw_map), context)
     if not isinstance(plugin_params, dict):
         raise W0Error("Некорректные параметры плагина.")
     plugin_params = cast(dict[str, Any], plugin_params)
@@ -182,37 +186,20 @@ def _resolve_calendar_params(
     pair: str,
     timeframe: str,
     strategy: str,
-    raw_params: dict[str, Any],
+    raw_params: Any,
     registry: StrategyRegistry,
 ) -> tuple[dict[str, Any], float, dict[str, Any]]:
     """Resolve the parameter envelope and the validated plugin map for one proof replay."""
     plugin_params = _validate_plugin_params(asset, pair, timeframe, strategy, raw_params, registry)
-    if strategy not in STRATEGIES:
-        options = {"entry_z": 1.5, "exit_z": 0.5, **zscore_options(asset), **plugin_params}
-        options["window"] = int(options["window"])
-        return options, 1.0, plugin_params
-    # Built-ins keep their historical envelope; the plugin re-validates exactly that map so the
-    # declared parameters (and therefore the payload) stay bit-for-bit identical.
     options = {"entry_z": 1.5, "exit_z": 0.5, **zscore_options(asset)}
-    if set(raw_params) - {"entry_z", "exit_z", "window", "threshold_pp"}:
-        raise W0Error("unknown strategy parameter")
-    options.update(
-        {key: raw_params[key] for key in ("entry_z", "exit_z", "window") if key in raw_params}
-    )
-    threshold = float(raw_params.get("threshold_pp", 1.0))
+    for key in ("entry_z", "exit_z", "window"):
+        if key in plugin_params:
+            options[key] = plugin_params[key]
+    if strategy not in STRATEGIES:
+        options.update(plugin_params)
     options["window"] = int(options["window"])
-    plugin = registry.get(strategy)
-    context = _instrument_context(asset, pair, timeframe)
-    names = tuple(spec.name for spec in plugin.parameter_schema(context))
-    return (
-        options,
-        threshold,
-        dict(
-            plugin.validate_parameters(
-                {name: options[name] for name in names if name in options}, context
-            )
-        ),
-    )
+    threshold = float(plugin_params.get("threshold_pp", 1.0))
+    return options, threshold, plugin_params
 
 
 def execute_calendar_proof(
@@ -238,9 +225,8 @@ def execute_calendar_proof(
     # Built-in calendar plugins declare the same adapter as external ones, so they join the
     # intent pipeline while still being handed exactly this parameter map: their own schema fills
     # any default (window, entry_z, exit_z, threshold_pp) before the intents are produced.
-    raw_params: dict[str, Any] = cast(dict[str, Any], req["raw_params"])
     options, threshold, plugin_params = _resolve_calendar_params(
-        asset, pair, timeframe, strategy, raw_params, registry
+        asset, pair, timeframe, strategy, req.get("raw_params", {}), registry
     )
     profile = {**tariff_profile(slippage), "tariff_group": ASSETS[asset]["group"]}
     z_cache = cache.setdefault("z", {}) if cache is not None else None

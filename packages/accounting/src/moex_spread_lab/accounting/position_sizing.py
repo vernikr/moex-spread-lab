@@ -321,6 +321,19 @@ class _Replay:
         )
 
 
+def _working_copy(unit: dict[str, Any], *, metrics_only: bool, copy_unit: bool) -> dict[str, Any]:
+    """`copy_unit` must hold for the metrics-only path too: both engines write into trades."""
+    if not copy_unit:
+        return unit
+    if not metrics_only:
+        return deepcopy(unit)
+    return {
+        **unit,
+        "selection": dict(unit["selection"]),
+        "trades": deepcopy(unit.get("trades") or []),
+    }
+
+
 def _require_executable_exits(proof: dict[str, Any]) -> None:
     """A planned exit must fall on a row the strategy can actually trade out of."""
     series = cast(list[dict[str, Any]], proof.get("series") or [])
@@ -355,13 +368,7 @@ def size_proof(
 ) -> dict[str, Any]:
     """Replay independent signal intents; all account observations are prefix-causal."""
     initial = positive(settings.initial_capital_rub, "начальный капитал")
-    proof = (
-        {**unit, "selection": dict(unit["selection"])}
-        if metrics_only
-        else deepcopy(unit)
-        if copy_unit
-        else unit
-    )
+    proof = _working_copy(unit, metrics_only=metrics_only, copy_unit=copy_unit)
     _require_executable_exits(proof)
     terms = Terms(proof, contracts, settings)
     state = None

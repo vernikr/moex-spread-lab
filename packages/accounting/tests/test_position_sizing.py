@@ -167,6 +167,23 @@ class FundedSizingTests(unittest.TestCase):
             places=2,
         )
 
+    def test_metrics_only_leaves_the_caller_unit_untouched(self):
+        unit, marks, contracts = unit_proof()
+        before = deepcopy(unit)
+        for metrics_only in (True, False):
+            size_proof(unit, marks, ResearchSettings(), contracts, metrics_only=metrics_only)
+        self.assertEqual(unit, before)
+
+    def test_metrics_only_still_sizes_a_reused_unit_after_an_unaffordable_run(self):
+        unit, marks, contracts = unit_proof()
+        # A first, deliberately under-funded sizing pass must not leak into the next one.
+        poor = size_proof(
+            unit, marks, ResearchSettings(initial_capital_rub=100), contracts, metrics_only=True
+        )
+        self.assertEqual(poor["trades"], [])
+        rich = size_proof(unit, marks, ResearchSettings(), contracts, metrics_only=True)
+        self.assertEqual(len(rich["trades"]), 2)
+
     def test_a_planned_exit_on_an_ineligible_day_fails_closed(self):
         # Silently keeping the position open used to report a closed trade with no exit costs.
         unit, marks, contracts = unit_proof(entries=((0, 1),))

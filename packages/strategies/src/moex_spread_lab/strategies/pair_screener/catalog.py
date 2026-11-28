@@ -189,33 +189,24 @@ def _resolve_proof_availability(
     return proof_available, reasons
 
 
+def _valid_positive_float(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    f = float(value)
+    return f if math.isfinite(f) and f > 0 else None
+
+
 def _pair_margin_metrics(
     near_terms: InstrumentRow, far_terms: InstrumentRow, initial_capital: float
 ) -> tuple[float | None, float | None, bool | None]:
-    m_near: object = near_terms.get("initial_margin")
-    m_far: object = far_terms.get("initial_margin")
-    margin_pct = (
-        round((float(m_near) + float(m_far)) / initial_capital * 100, 2)
-        if isinstance(m_near, (int, float)) and isinstance(m_far, (int, float))
-        else None
-    )
-    margin: float | None = None
-    if (
-        isinstance(m_near, (int, float))
-        and not isinstance(m_near, bool)
-        and isinstance(m_far, (int, float))
-        and not isinstance(m_far, bool)
-        and math.isfinite(m_near)
-        and math.isfinite(m_far)
-        and m_near > 0
-        and m_far > 0
-    ):
-        margin = float(m_near) + float(m_far)
-    passes_cap = (
-        (3 * margin + DEFAULT_STRESS_VM_BUFFER + DEFAULT_UNCERTAINTY_BUFFER <= initial_capital)
-        if margin is not None
-        else None
-    )
+    m_near = _valid_positive_float(near_terms.get("initial_margin"))
+    m_far = _valid_positive_float(far_terms.get("initial_margin"))
+    cap = _valid_positive_float(initial_capital)
+    if m_near is None or m_far is None or cap is None:
+        return None, None, None
+    margin = m_near + m_far
+    margin_pct = round(margin / cap * 100, 2)
+    passes_cap = 3 * margin + DEFAULT_STRESS_VM_BUFFER + DEFAULT_UNCERTAINTY_BUFFER <= cap
     return margin_pct, margin, passes_cap
 
 

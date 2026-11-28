@@ -19,6 +19,7 @@ from moex_spread_lab.core.universe import MAX_QUANTITY
 from moex_spread_lab.data import HISTORY_FIELDS, history_url
 from moex_spread_lab.strategies.pair_screener import inputs as inputs_module
 from moex_spread_lab.strategies.pair_screener import normalization as normalization_module
+from moex_spread_lab.strategies.pair_screener.catalog import _pair_margin_metrics
 from moex_spread_lab.strategies.pair_screener.inputs import (
     HISTORY_WINDOWS,
     ScreenerError,
@@ -321,3 +322,28 @@ def test_build_result_through_ignores_post_cutoff_thin_volume_and_funding_gaps(
         through=cutoff,
     )
     assert res["daily"][-1]["date"] <= cutoff
+
+
+def test_pair_margin_metrics_rejects_bool_nan_inf_and_non_positive_values() -> None:
+    assert _pair_margin_metrics({"initial_margin": True}, {"initial_margin": 1000.0}, 30000.0) == (
+        None,
+        None,
+        None,
+    )
+    assert _pair_margin_metrics(
+        {"initial_margin": float("nan")}, {"initial_margin": 1000.0}, 30000.0
+    ) == (None, None, None)
+    assert _pair_margin_metrics(
+        {"initial_margin": float("inf")}, {"initial_margin": 1000.0}, 30000.0
+    ) == (None, None, None)
+    assert _pair_margin_metrics(
+        {"initial_margin": -5000.0}, {"initial_margin": 1000.0}, 30000.0
+    ) == (None, None, None)
+    assert _pair_margin_metrics({"initial_margin": 1000.0}, {"initial_margin": 1000.0}, 0.0) == (
+        None,
+        None,
+        None,
+    )
+    assert _pair_margin_metrics(
+        {"initial_margin": 1000.0}, {"initial_margin": 2000.0}, 30000.0
+    ) == (10.0, 3000.0, True)

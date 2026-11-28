@@ -57,6 +57,9 @@ const COST_RU = {
 export const humanReason = r => (r ? REASON_RU[r] || String(r).replaceAll('_', ' ') : '');
 export const humanCost = k => COST_RU[k] || String(k).replaceAll('_', ' ');
 
+const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+export const escapeHtml = v => String(v ?? '').replace(/[&<>"']/g, ch => HTML_ESCAPES[ch]);
+
 export const COLORS = {
   near: '#6fb7ff',
   far: '#f3b36b',

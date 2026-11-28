@@ -1,6 +1,6 @@
 /** Lightweight-charts orchestration: panes, chart creation, series wiring and crosshair binding. */
 
-import { $, cls, COLORS, chartTime, displayTime, fmt, humanCost, rub, signed } from './dom.js';
+import { $, cls, COLORS, chartTime, displayTime, escapeHtml, fmt, humanCost, rub, signed } from './dom.js';
 import { NORM_PANEL, applyNormHint, spreadDisplayValues } from './normalizations.js';
 import { isIntraday, legPrice, state } from './state.js';
 import { buildMarkers, buildSeries, chartOpts, makePane, markValidationStart, paneOptions } from './chart-series.js';
@@ -149,7 +149,7 @@ export function buildCharts() {
   if (cFund) state.charts.push(cFund);
   state.charts.push(cCum);
 
-  const { nearSeries, farSeries, rawSpreadSeries, sRaw, spreadSeries, sDisp, volSeries, fundSeries, cumSeries } = buildSeries({
+  const { nearSeries, farSeries, rawSpreadSeries, sRaw, spreadSeries, sDisp, volSeries, volumeOf, fundSeries, cumSeries } = buildSeries({
     LWC,
     S,
     L,
@@ -181,7 +181,7 @@ export function buildCharts() {
     [cFar, { pane: farPane, series: farSeries, value: r => r.far }],
     [cSpreadRaw, { pane: rawSpreadPane, series: rawSpreadSeries, value: (_, i) => sRaw[i] }],
     [cSpread, { pane: spreadPane, series: spreadSeries, value: (_, i) => sDisp[i] }],
-    [cVol, { pane: volPane, series: volSeries, value: r => (state.universe === 'pair_screen' ? Math.min(r.near_volume ?? 0, r.far_volume ?? 0) : r.spread_volume) ?? 0 }],
+    [cVol, { pane: volPane, series: volSeries, value: volumeOf }],
   ]);
   if (cFund && fundSeries) chartMeta.set(cFund, { pane: fundingPane, series: fundSeries, value: r => r.funding_rub });
   chartMeta.set(cCum, { pane: cumPane, series: cumSeries, value: r => L[r.date]?.cumulative_net_rub });
@@ -306,7 +306,7 @@ function tipHtml(s, l, i, dayEvents) {
     const unit = { stoch20: '%', rz20: 'σ', ewma10: 'σ', mad20: 'σ', garch: 'σ', kalman: 'σ' }[nmode] || 'pp';
     h += `<span class=\"k\">нормализован · ${NORM_PANEL[nmode] || nmode}</span> ${v == null ? '—' : fmt(v, 2)}${unit === 'pp' ? '%' : unit}<br>`;
   }
-  h += `<span class=\"k\">${isIntraday(s.timeframe) ? 'объём за бар' : 'объём за день'}</span> ближняя ${fmt(s.near_volume)} · дальняя ${fmt(s.far_volume)}${s.spread_volume != null ? ` · спред ${fmt(s.spread_volume)}${s.spread_trades != null ? ' за ' + fmt(s.spread_trades) + ' сделок' : ''}` : ''}`;
+  h += `<span class=\"k\">${escapeHtml(isIntraday(s.timeframe) ? 'объём за бар' : 'объём за день')}</span> ближняя ${fmt(s.near_volume)} · дальняя ${fmt(s.far_volume)}${s.spread_volume != null ? ` · спред ${fmt(s.spread_volume)}${s.spread_trades != null ? ' за ' + fmt(s.spread_trades) + ' сделок' : ''}` : ''}`;
   if (s.buy_level_rel != null) {
     h += `<br><span class=\"k\">Порог покупки / продажи</span> ${fmt(s.buy_level_rel, 3)}% / ${fmt(s.sell_level_rel, 3)}% · на закрытии сигнального бара`;
   }
@@ -323,9 +323,9 @@ function tipHtml(s, l, i, dayEvents) {
     const leg = kind === 'ENTRY' ? t.entry : t.exit;
     const fees = Object.entries(leg.costs || {})
       .filter(([, v]) => v)
-      .map(([k, v]) => `${humanCost(k)} ${fmt(v, 2)} ₽`)
+      .map(([k, v]) => `${escapeHtml(humanCost(k))} ${fmt(v, 2)} ₽`)
       .join(', ');
-    h += `<hr><b>#${t.number} ${kind === 'ENTRY' ? 'ВХОД' : 'ВЫХОД'}</b> ${t.side === 'long_spread' ? 'покупка ближней / продажа дальней' : 'продажа ближней / покупка дальней'} · контрактов: ${t.quantity}${t.open_at_end && kind === 'EXIT' ? ' · принудительная отметка' : ''}<br><span class=\"k\">исполнение спреда</span> <b>${legPrice(leg.spread_fill)}</b> · <span class=\"k\">ноги</span> ${legPrice(leg.near_price)} / ${legPrice(leg.far_price)}<br><span class=\"k\">${isIntraday(state.payload.selection?.timeframe) ? 'объём за бар' : 'объём за день'}</span> ближняя ${fmt(leg.near_volume)} · дальняя ${fmt(leg.far_volume)}${leg.spread_volume != null ? ` · спред ${fmt(leg.spread_volume)}` : ''}<br><span class=\"k\">комиссии</span> ${fees || '—'}`;
+    h += `<hr><b>#${t.number} ${kind === 'ENTRY' ? 'ВХОД' : 'ВЫХОД'}</b> ${t.side === 'long_spread' ? 'покупка ближней / продажа дальней' : 'продажа ближней / покупка дальней'} · контрактов: ${t.quantity}${t.open_at_end && kind === 'EXIT' ? ' · принудительная отметка' : ''}<br><span class=\"k\">исполнение спреда</span> <b>${legPrice(leg.spread_fill)}</b> · <span class=\"k\">ноги</span> ${legPrice(leg.near_price)} / ${legPrice(leg.far_price)}<br><span class=\"k\">${escapeHtml(isIntraday(state.payload.selection?.timeframe) ? 'объём за бар' : 'объём за день')}</span> ближняя ${fmt(leg.near_volume)} · дальняя ${fmt(leg.far_volume)}${leg.spread_volume != null ? ` · спред ${fmt(leg.spread_volume)}` : ''}<br><span class=\"k\">комиссии</span> ${fees || '—'}`;
     if (kind === 'EXIT') h += `<br><span class=\"k\">результат</span> гросс ${rub(t.gross_rub, 2)} · нетто <b class=\"${cls(t.net_rub)}\">${rub(t.net_rub, 2)}</b>`;
   }
   return h;

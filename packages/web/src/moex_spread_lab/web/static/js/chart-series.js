@@ -141,6 +141,7 @@ export function buildSeries({
     lt.setData(S.map(r => (r.spread_last_trade_rel != null ? { time: chartTime(r.date), value: r.spread_last_trade_rel } : { time: chartTime(r.date) })));
   }
 
+  const volumeOf = r => (state.universe === 'pair_screen' || calendarProxy ? Math.min(r.near_volume ?? 0, r.far_volume ?? 0) : r.spread_volume) ?? 0;
   const volSeries = cVol.addSeries(LWC.HistogramSeries, {
     priceFormat: { type: 'volume', precision: 0, minMove: 1 },
     priceLineVisible: false,
@@ -149,7 +150,7 @@ export function buildSeries({
   volSeries.setData(
     S.map(r => ({
       time: chartTime(r.date),
-      value: (state.universe === 'pair_screen' || calendarProxy ? Math.min(r.near_volume ?? 0, r.far_volume ?? 0) : r.spread_volume) ?? 0,
+      value: volumeOf(r),
       color: (L[r.date]?.mark_pnl_rub ?? 0) >= 0 ? '#2f8f6a' : '#a24d47',
     })),
   );
@@ -202,7 +203,7 @@ export function buildSeries({
   });
   ddSeries.setData(ddPoints);
 
-  return { nearSeries, farSeries, rawSpreadSeries, sRaw, spreadSeries, sDisp, volSeries, fundSeries, cumSeries, ddSeries };
+  return { nearSeries, farSeries, rawSpreadSeries, sRaw, spreadSeries, sDisp, volSeries, volumeOf, fundSeries, cumSeries, ddSeries };
 }
 
 /* Chart pane scaffolding: collapsible panes, validation markers, marker colours. */

@@ -128,6 +128,27 @@ def test_ledger_csv_sums_same_bar_contracts_and_quotes_carriage_returns() -> Non
     assert f'"line{_CR}two"' in result["csv"], result["csv"]
 
 
+@pytest.mark.skipif(not shutil.which("node"), reason="Node is optional")
+def test_ledger_table_escapes_the_skipped_entry_reason() -> None:
+    """#340: a skip reason with `<` must be escaped before it reaches `innerHTML`."""
+    result = _node_json(_ledger_script(render_table=True))
+    assert "spread &lt; -2.0" in result["tableHtml"], result["tableHtml"]
+    assert "spread < -2.0" not in result["tableHtml"], result["tableHtml"]
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="Node is optional")
+def test_escape_html_covers_angle_brackets_quotes_and_ampersands() -> None:
+    script = f"""
+const dom = await import({json.dumps((_JS_DIR / "dom.js").as_uri())});
+const quote = String.fromCharCode(34);
+const apos = String.fromCharCode(39);
+console.log(JSON.stringify({{
+  out: dom.escapeHtml("a<b & " + quote + "c" + quote + " " + apos + "d"),
+}}));
+"""
+    assert _node_json(script)["out"] == "a&lt;b &amp; &quot;c&quot; &#39;d"
+
+
 _LEDGER_SCRIPT = """
 const charts = await import($charts);
 const dom = await import($dom);

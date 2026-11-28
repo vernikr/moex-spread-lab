@@ -50,3 +50,27 @@ def test_validation_uses_continuous_automatic_account_and_reports_shortfall():
     for invalid in (0, math.inf, math.nan):
         with pytest.raises(W0Error, match="LQDT"):
             evaluation.annualized_returns(proof, {**marks, days[1]: invalid}, split)
+
+
+def test_idle_lqdt_only_ledger_starting_before_training_scores_exactly_zero():
+    # The account compounds in LQDT from ledger[0] while training starts later
+    # (journal-only leading rows); both legs must open at the same anchor, so
+    # an idle book scores 0.0 excess without a validation split (issue #303).
+    initial = 30000.0
+    days = [f"2026-01-{day:02}" for day in range(1, 9)]
+    marks = {day: 1.001**i for i, day in enumerate(days)}
+    proof = {
+        "selection": {"sizing": AUTO_SIZING},
+        "sizing": {"initial_capital_rub": initial},
+        "ledger": [
+            {"date": day, "account_value_rub": initial * marks[day], "cash_shortfall": False}
+            for day in days
+        ],
+        "trades": [],
+    }
+    split = EvaluationSplit.from_dates(days[4:], 0)
+    assert split.training[0] == days[4] and not split.validation
+    result = evaluation.annualized_returns(proof, marks, split)
+    assert result["strategy_annualized_pct"] == pytest.approx(result["lqdt_annualized_pct"])
+    assert result["annualized_excess_pp"] == 0.0
+    assert evaluation.excess_curve(proof, marks)[days[-1]] == 0.0

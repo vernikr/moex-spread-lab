@@ -753,9 +753,8 @@ fail:
 
 /* ---------------- 6. Max-affordable sizing  ----------------
  * Accepts zero-copy array('d') / array('B') buffers or Python lists for all
- * window columns, and supports `scalar_only=1` (when rows_lst == Py_None and
- * summary_only flag is set, or via optional `scalar_only` arg) to skip allocating
- * `n` Python ledger dicts + `2*n` PyFloats per Optuna training trial!
+ * window columns; `scalar_only=1` skips allocating `n` Python ledger dicts +
+ * `2*n` PyFloats per Optuna training trial and returns the scalar summary.
  */
 
 typedef struct {
@@ -1135,7 +1134,7 @@ static PyObject *fast_size_proof_metrics(PyObject *Py_UNUSED(self), PyObject *ar
     SizingRules rules = {stress, native_spread, funding_only, 0, initial};
     double p0 = (n > 0) ? prices[0] : 1.0;
 
-    double end_wealth = initial, end_cum_net = 0.0, end_price = p0;
+    double end_wealth = initial, end_cum_net = 0.0, end_price = p0, start_wealth = initial;
     int any_window_shortfall = 0;
 
     TradeSpec *pos_trade = NULL;
@@ -1201,14 +1200,9 @@ static PyObject *fast_size_proof_metrics(PyObject *Py_UNUSED(self), PyObject *ar
         rules.paused |= shortfall;
 
         if (scalar_only) {
-            if (i >= start_idx && i <= end_idx && shortfall) {
-                any_window_shortfall = 1;
-            }
-            if (i == end_idx) {
-                end_wealth = wealth;
-                end_cum_net = cumulative;
-                end_price = prices[i];
-            }
+            any_window_shortfall |= (i >= start_idx && i <= end_idx && shortfall);
+            if (i == start_idx) start_wealth = wealth;
+            if (i == end_idx) { end_wealth = wealth; end_cum_net = cumulative; end_price = prices[i]; }
         } else if (emit_ledger_row(ledger, i, PyList_GET_ITEM(dates_lst, i), cumulative, wealth, shortfall) < 0) {
             goto cleanup;
         }
@@ -1218,7 +1212,7 @@ static PyObject *fast_size_proof_metrics(PyObject *Py_UNUSED(self), PyObject *ar
     if (!acc_tuples) goto cleanup;
 
     if (scalar_only) {
-        PyObject *summary = Py_BuildValue("(ddddi)", p0, end_price, end_wealth, end_cum_net, any_window_shortfall);
+        PyObject *summary = Py_BuildValue("(dddddi)", p0, end_price, end_wealth, end_cum_net, start_wealth, any_window_shortfall);
         if (summary) {
             ret_obj = PyTuple_Pack(2, summary, acc_tuples);
             Py_DECREF(summary);

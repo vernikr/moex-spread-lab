@@ -38,11 +38,13 @@ def reconstruct_wealth(ledger, marks, trades, initial, automatic):
     return values, days
 
 
-def expected_excess_pp(values, marks, days, initial, share):
+def expected_excess_pp(values, marks, days, share):
     """Two-legged annualization between the split anchor and the last published day."""
     split = EvaluationSplit.from_dates(days, share)
     anchor = split.training[-1] if share else split.training[0]
-    opening = values[anchor] if share else initial
+    # Both legs open at the anchor: the account wealth on that day, not the
+    # configured capital, so the ledger may compound before training starts.
+    opening = values[anchor]
     span = (date.fromisoformat(days[-1]) - date.fromisoformat(anchor)).days
     return 100 * (
         (values[days[-1]] / opening) ** (365 / span)
@@ -171,7 +173,7 @@ class CapitalReplayTests(ProofWorkspaceCase):
         # published margin held at the end of each row; never restart at split.
         marks = published_marks(self.root, p["ledger"])
         values, days = reconstruct_wealth(p["ledger"], marks, p["trades"], initial, automatic)
-        expected = expected_excess_pp(values, marks, days, initial, share)
+        expected = expected_excess_pp(values, marks, days, share)
         actual = runtime_excess_pp(p, marks, days, share)
         self.assertNotEqual(expected, 0)
         self.assertAlmostEqual(actual, expected, places=8)

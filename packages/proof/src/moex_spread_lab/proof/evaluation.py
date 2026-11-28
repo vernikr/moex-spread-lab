@@ -145,7 +145,10 @@ def annualized_returns(
         raise W0Error("Непригодная отметка LQDT в расчётном периоде.")
     values, shortfalls = _wealth_path(proof, rows, idx, initial, prices)
     anchor = train_end if split.validation else start
-    opening = values[idx[anchor]] if split.validation else initial
+    # Both legs open at the wealth and price of the same anchor date: the ledger
+    # may already have compounded in LQDT before the first training day, and an
+    # idle book must score exactly zero excess on either branch.
+    opening = values[idx[anchor]]
     result = annualize(opening, values[-1], prices[idx[anchor]], prices[-1], anchor, end)
     if isinstance(result, str):
         raise W0Error(result)

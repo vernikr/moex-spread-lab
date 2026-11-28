@@ -47,7 +47,7 @@ _Obj = dict[str, Any]
 _Axes = dict[str, Axis]
 _Marks = dict[str, float]
 
-_Summary = tuple[float, float, float, float, float, bool, bool]
+_Summary = tuple[float, float, float, float, float, float, bool, bool]
 
 SHORTFALL_REASON = "Свободные средства недостаточны для маржи."
 UNEXPOSED_REASON = "Открытого спреда не было на обучении."
@@ -80,7 +80,7 @@ def measure_scalar_train(
     if reason := admission(proof, settings):
         return {"utility": None, "reason": reason}
     summary: _Summary = proof["_scalar_train_summary"]
-    initial, p0, end_price, end_wealth, end_cum_net, shortfall, exposed = summary
+    initial, p0, end_price, end_wealth, end_cum_net, start_wealth, shortfall, exposed = summary
     start, end = split.training[0], split.training[-1]
     train_x = end_wealth - initial * end_price / p0
     train_rate = train_x / len(split.training)
@@ -92,7 +92,10 @@ def measure_scalar_train(
     if anchor is None or not all(math.isfinite(v) and v > 0 for v in (anchor, end_price)):
         annual: dict[str, float] | str = "Непригодная отметка LQDT в расчётном периоде."
     else:
-        annual = annualize(initial, end_wealth, anchor, end_price, start, end)
+        # The strategy opens at its wealth on the first training day — the same
+        # anchor as the benchmark — so a ledger that compounded in LQDT before
+        # training does not inflate the excess of an idle book.
+        annual = annualize(start_wealth, end_wealth, anchor, end_price, start, end)
     if isinstance(annual, str):
         return _blocked(metrics, [*reasons, annual])
     if shortfall:

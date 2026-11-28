@@ -356,7 +356,9 @@ def size_proof_fast_c(
     if ledger_or_summary == "overlap":
         raise W0Error("Перекрывающиеся сигналы не поддерживаются одним счётом окна.")
     if use_scalar:
-        p0, end_price, end_wealth, end_cum_net, any_window_shortfall = ledger_or_summary
+        p0, end_price, end_wealth, end_cum_net, start_wealth, any_window_shortfall = (
+            ledger_or_summary
+        )
         exposed = any(e_i <= end_idx and (x_i < 0 or x_i >= start_idx) for e_i, x_i in acc_tuples)
         proof["_scalar_train_summary"] = (
             initial,
@@ -364,6 +366,7 @@ def size_proof_fast_c(
             end_price,
             end_wealth,
             end_cum_net,
+            start_wealth,
             bool(any_window_shortfall),
             exposed,
         )

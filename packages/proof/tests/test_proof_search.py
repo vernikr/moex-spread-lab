@@ -19,12 +19,13 @@ from moex_spread_lab.proof.proof_search import (
     TRIALS,
     Axis,
     Landscape,
+    StudyWindow,
     _excess_curve,
     _measure,
     _tune,
     research_run,
 )
-from moex_spread_lab.proof.service import ProofService
+from moex_spread_lab.proof.service import ProofService, benchmark_marks
 from moex_spread_lab.proof.strategy_catalog import get_strategy_axes
 from test_calendar_proof import _build_root as build_calendar_root
 from test_execution_proof import _build_root as build_pair_root
@@ -110,6 +111,37 @@ def test_global_seed_makes_a_run_reproducible_and_zero_draws_a_new_one(pair_serv
     assert replay["seed_used"] == drawn[0]["seed_used"]
     assert replay["candidates"] == drawn[0]["candidates"]
     assert replay["selected_parameters"] == drawn[0]["selected_parameters"]
+
+
+def test_idle_book_on_a_ledger_starting_before_training_scores_exactly_zero(tmp_path):
+    # Leading zero-volume rows keep the account in LQDT while the first
+    # volume-eligible training day arrives later: an idle book must contribute
+    # zero excess, not a free positive bias (issue #303).
+    root = tmp_path
+    build_pair_root(root)
+    candles = root / "data/w1/candles/CRZ6_1d.json"
+    data = json.loads(candles.read_text())
+    for row in data["rows"][:6]:
+        row["volume"] = 0
+    candles.write_text(json.dumps(data))
+    service = ProofService(root)
+    save_settings(root, {"random_seed": 41})
+    settings = ResearchSettings.load(root)
+    req = {
+        **PAIR,
+        "slippage_ticks": 0.5,
+        "sizing": "max_affordable",
+        "parameters": {"lookback": 10, "entry_z": 5.0, "exit_z": 1.0},
+    }
+    benchmark = benchmark_marks(root / "data/benchmark/lqdt-lineage.json")
+    case = StudyWindow(service, req, settings, benchmark)
+    idle = {"lookback": 10, "entry_z": 5.0, "exit_z": 1.0}
+    report = case.report(idle)
+    assert report["trades"] == []
+    assert case.split.training[0] > report["ledger"][0]["date"]
+    result = report["evaluation"]["result"]
+    assert result["excess_rub"] == 0.0
+    assert result["annualized_excess_pp"] == 0.0
 
 
 def test_pair_replay_reproducibility_and_holdout_is_not_a_selection_input(pair_service):
@@ -371,6 +403,45 @@ def test_missing_exposure_names_each_period_and_counts_a_carried_spread(span, mi
     else:
         assert measured["utility"] is None
         assert measured["reason"] == f"Открытого спреда не было {missing}."
+
+
+@pytest.mark.parametrize(
+    "end_wealth",
+    [30096.0, 30100.0, 30090.0],
+    ids=["idle", "beats-lqdt", "loses-to-lqdt"],
+)
+def test_scalar_train_summary_anchors_both_legs_at_the_training_start(end_wealth):
+    # The C metrics-only summary carries the wealth on the first training day,
+    # so the ruble excess and the annualized score agree in sign, and an idle
+    # book that already compounded in LQDT before training scores exactly 0
+    # (issue #303).
+    start, end = "2025-06-25", "2025-09-01"
+    marks = {start: 1.0024, end: 1.0032}
+    initial, p0 = 30000.0, 1.0
+    proof = {
+        "selection": {"strategy": "funding_only"},
+        "window": {"passes_capital_screen": True, "tradable_every_day": True},
+        "_scalar_train_summary": (
+            initial,
+            p0,
+            marks[end],
+            end_wealth,
+            0.0,
+            initial * marks[start] / p0,
+            False,
+            False,
+        ),
+    }
+    measured = _measure(
+        proof, marks, EvaluationSplit.from_dates([start, end], 0), ResearchSettings()
+    )
+    if end_wealth == 30096.0:
+        assert measured["excess_rub"] == 0.0
+        assert measured["annualized_excess_pp"] == 0.0
+        assert measured["rank_score"] == 0.0
+    else:
+        assert (measured["excess_rub"] > 0) == (end_wealth > 30096.0)
+        assert (measured["annualized_excess_pp"] > 0) == (end_wealth > 30096.0)
 
 
 def test_benchmark_relative_drawdown_and_shortfall_no_longer_veto_a_candidate():

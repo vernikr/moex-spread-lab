@@ -138,7 +138,13 @@ def annualized_returns(
     start, train_end = split.training[0], split.training[-1]
     end = split.validation[-1] if split.validation else train_end
     ledger: list[dict[str, Any]] = proof["ledger"]
-    rows = [r for r in ledger if start <= r["date"] <= end]
+    # Walk the full ledger from ledger[0] through `end`. The fixed-size LQDT
+    # overlay must compound free cash on any leading zero-volume rows before the
+    # first training day (e.g. journal-only LQDT appreciation), exactly like the
+    # automatic-sizing account-value walk. Both branches then anchor at the same
+    # `anchor` date below, so a 1-lot fixed-size run and an identical
+    # 1-lot max_affordable run report the same annualized return.
+    rows = [r for r in ledger if r["date"] <= end]
     idx = {r["date"]: i for i, r in enumerate(rows)}
     prices = [marks[r["date"]] for r in rows]
     if not all(math.isfinite(v) and v > 0 for v in prices):

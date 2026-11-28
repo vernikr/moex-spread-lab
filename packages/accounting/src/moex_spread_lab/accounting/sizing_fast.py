@@ -74,7 +74,8 @@ def maximum_quantity(
     # Component rounding can move the exact boundary by a kopeck.
     while qty and requirement(qty) > budget + 1e-9:
         qty -= 1
-    while requirement(qty + 1) <= budget + 1e-9:
+    cap = int(budget / required) + 2
+    while qty < cap and requirement(qty + 1) <= budget + 1e-9:
         qty += 1
     return qty
 

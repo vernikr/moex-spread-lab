@@ -272,6 +272,11 @@ def test_buffer_list_conversion_failure_propagates(kind: str) -> None:
     values: list[list[object]] = [[0.0, 1.0], [1, 1], [0, 1, 2]]
     index = {"double": 0, "byte": 1, "int32": 2}[kind]
     values[index][1] = BadValue()
+    if kind == "byte":
+        # List-path flags are now strict: only bool or 0/1 ints are accepted.
+        with pytest.raises(TypeError, match="byte flags"):
+            fastcore.calendar_sample_z(*values, 2, False)
+        return
     with pytest.raises(ValueError, match=f"bad {kind}"):
         fastcore.calendar_sample_z(*values, 2, False)
 

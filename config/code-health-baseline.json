@@ -2,42 +2,37 @@
   "c_functions": {
     "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_calendar_convergence_scan": {
       "baseline_ccn": 26,
-      "baseline_nloc": 59,
+      "baseline_nloc": 36,
       "baseline_parameters": 2
     },
     "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_calendar_sample_z": {
       "baseline_ccn": 28,
-      "baseline_nloc": 100,
+      "baseline_nloc": 54,
       "baseline_parameters": 2
     },
     "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_calendar_zscore_scan": {
       "baseline_ccn": 32,
-      "baseline_nloc": 77,
+      "baseline_nloc": 45,
       "baseline_parameters": 2
     },
     "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_compute_rolling_z": {
       "baseline_ccn": 20,
-      "baseline_nloc": 74,
+      "baseline_nloc": 38,
       "baseline_parameters": 2
     },
     "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_mean_reversion_scan": {
-      "baseline_ccn": 30,
-      "baseline_nloc": 82,
+      "baseline_ccn": 28,
+      "baseline_nloc": 49,
       "baseline_parameters": 2
     },
     "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_size_proof_metrics": {
-      "baseline_ccn": 50,
-      "baseline_nloc": 148,
+      "baseline_ccn": 48,
+      "baseline_nloc": 93,
       "baseline_parameters": 2
     }
   },
   "complexity": {},
-  "files": {
-    "packages/core/src/moex_spread_lab/core/_fastcore.c": {
-      "baseline_loc": 1155,
-      "baseline_tokens": 10968
-    }
-  },
+  "files": {},
   "guard_files": [],
   "legacy_fragment_files": [],
   "legacy_shallow_shards": [

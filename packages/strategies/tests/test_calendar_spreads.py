@@ -259,6 +259,14 @@ class ProofPayloadTests(unittest.TestCase):
         self.assertEqual(sizing["ledger"], [])
         self.assertEqual(sizing["summary"], {})
         self.assertIn("far_price", sizing["trades"][0]["entry"])
+        self.assertFalse(sizing["trades"][0]["open_at_end"])
+
+        forced_account = _proof_account(self.ROWS)
+        forced_account["trade_list"][0]["reason"] = "end_of_window"
+        forced_sizing = build_proof_payload(
+            window, forced_account, meta, metrics_only=True, sizing_intents=True
+        )
+        self.assertTrue(forced_sizing["trades"][0]["open_at_end"])
 
     def test_execute_calendar_proof_honors_threshold_pp_and_rejects_bad_params(self):
         days = [f"2026-01-{day:02d}" for day in range(1, 28)]

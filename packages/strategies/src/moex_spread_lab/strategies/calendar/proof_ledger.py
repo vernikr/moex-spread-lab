@@ -12,7 +12,7 @@ _COMPACT_KEYS = "date session_date benchmark_mark_date near far near_open far_op
 _EVENT_KEYS = "date spread_fill spread_fill_rel near_price far_price spread_volume near_volume far_volume costs"
 _FULL_KEYS = "date timestamp session_date benchmark_mark_date timeframe near far near_open far_open spread spread_open spread_rel spread_open_rel spread_last_trade_rel spread_last_trade spread_volume volume_eligible signal_eligible entry_eligible exit_eligible spread_trades near_volume far_volume days_to_near_expiry dev_pp ruonia_rate_pct ruonia_rate_date rate_price_per_pp margin_rub point_value_rub"
 _LEG_KEYS = "date spread_fill near_price far_price"
-_TRADE_KEYS = "number side signal entry exit reason"
+_TRADE_KEYS = "number side signal entry exit reason open_at_end"
 
 
 def _row(keys: str, values: Sequence[Any]) -> dict[str, Any]:
@@ -235,6 +235,7 @@ def sizing_intents_trades(account: dict[str, Any], is_open: bool) -> list[dict[s
                 b(a["entry_row"]),
                 b(a["exit_row"]),
                 a["reason"],
+                a["reason"] == "end_of_window",
             ),
         )
         for (c, a) in enumerate(account["trade_list"], start=1)

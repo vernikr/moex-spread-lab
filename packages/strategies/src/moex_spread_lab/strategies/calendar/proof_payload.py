@@ -131,6 +131,7 @@ def _trade_seeds(ctx: _ProofEnvelopeCtx, full: bool) -> list[dict[str, Any]]:
             if not full
             else full_event_dict(trade["exit_row"], trade["exit_costs"], is_open),
             "reason": trade["reason"],
+            "open_at_end": trade["reason"] == "end_of_window",
             "margin_rub": trade["margin_rub"],
             "gross_rub": float(trade["gross_rub"]),
             "costs_rub": float(trade["costs_rub"]),

@@ -39,6 +39,16 @@ STATIC_MIME_TYPES: dict[str, str] = {
 INDEX_PAGES = frozenset({"/", "/proof"})
 
 
+def _header_token(value: str | None) -> str:
+    return (value or "").strip().lower()
+
+
+def _allowed_hosts_env() -> set[str]:
+    return {
+        _header_token(p) for p in os.environ.get("MSL_ALLOWED_HOSTS", "").split(",") if p.strip()
+    }
+
+
 def resolve_static_asset(url_path: str) -> tuple[Path, str] | None:
     """Map `/static/<rel>` to a file inside `static/`; anything else resolves to `None`."""
     rel = unquote(url_path.removeprefix("/static/"))
@@ -122,10 +132,10 @@ class LoopbackHandler(BaseHTTPRequestHandler):
         The bind address stays `127.0.0.1`; a cloud-agent preview opts in with the exact preview
         hostname (or `*`) and the API keeps rejecting every other Host.
         """
-        host = self.headers.get("Host", "")
+        host = _header_token(self.headers.get("Host"))
         port = self.server_port()
         allowed = {f"127.0.0.1:{port}", f"localhost:{port}"}
-        extra = {p.strip() for p in os.environ.get("MSL_ALLOWED_HOSTS", "").split(",") if p.strip()}
+        extra = _allowed_hosts_env()
         return "*" in extra or host in allowed or host in extra
 
     def local_origin(self) -> bool:
@@ -133,23 +143,24 @@ class LoopbackHandler(BaseHTTPRequestHandler):
         if origin is None:
             return True
         port = self.server_port()
-        extra = {p.strip() for p in os.environ.get("MSL_ALLOWED_HOSTS", "").split(",") if p.strip()}
+        extra = _allowed_hosts_env()
         if "*" in extra:
             return True
         allowed = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
         allowed |= {f"https://{host}" for host in extra}
-        return origin in allowed
+        return _header_token(origin) in allowed
 
     def local_dev_request(self) -> bool:
         """Development endpoints never inherit preview-host opt-ins."""
         port = self.server_port()
-        host = self.headers.get("Host", "")
+        host = _header_token(self.headers.get("Host"))
         origin = self.headers.get("Origin")
         return (
             self.client_address[0] in {"127.0.0.1", "::1"}
             and host in {f"127.0.0.1:{port}", f"localhost:{port}"}
             and (
-                origin is None or origin in {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
+                origin is None
+                or _header_token(origin) in {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
             )
         )
 

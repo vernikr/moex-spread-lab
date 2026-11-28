@@ -306,11 +306,15 @@ class WebHttpRoutesTests(unittest.TestCase):
             403,
         )
         self.assertEqual(self._host_status(f"127.0.0.1:{self.port}"), 200)
+        self.assertEqual(
+            self._host_status(f"LOCALHOST:{self.port}", f"HTTP://LOCALHOST:{self.port}"), 200
+        )
         self.assertEqual(self._host_status(PREVIEW), 403)
         self.assertEqual(self._host_status(PREVIEW, f"https://{PREVIEW}"), 403)
         with mock.patch.dict("os.environ", {"MSL_ALLOWED_HOSTS": PREVIEW}):
             self.assertEqual(self._host_status(PREVIEW), 200)
             self.assertEqual(self._host_status(PREVIEW, f"https://{PREVIEW}"), 200)
+            self.assertEqual(self._host_status(PREVIEW.upper(), f"HTTPS://{PREVIEW.upper()}"), 200)
             self.assertEqual(self._host_status("evil.example:8899"), 403)
             self.assertEqual(self._host_status(PREVIEW, "https://evil.example"), 403)
         with mock.patch.dict("os.environ", {"MSL_ALLOWED_HOSTS": "*"}):

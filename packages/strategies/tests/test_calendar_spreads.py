@@ -17,8 +17,12 @@ from moex_spread_lab.strategies.calendar.calendar_spreads import (
     positive_spread_volume_rows,
     stress_ok,
 )
+from moex_spread_lab.strategies.calendar.data_cache import slice_window_through
 from moex_spread_lab.strategies.calendar.proof_payload import build_proof_payload
-from moex_spread_lab.strategies.calendar.proof_runner import execute_calendar_proof
+from moex_spread_lab.strategies.calendar.proof_runner import (
+    _build_h1_eligible_rows,
+    execute_calendar_proof,
+)
 from synthetic_history import iso_weekdays_until as _days
 
 TERMS = {"mult": 1.0, "margin_rate": 0.15}
@@ -370,6 +374,93 @@ class ProofPayloadTests(unittest.TestCase):
         self.assertAlmostEqual(
             causal_wins[0]["rows"][0]["dev_pp"], prior_only[0]["rows"][0]["dev_pp"]
         )
+
+    def test_h1_fill_bar_eligibility_and_unknown_session_slice_invalidation(self):
+        h1_win = {
+            "liquidity_gate": 100,
+            "rows": [
+                {
+                    "date": "2026-02-02T10:00:00",
+                    "session_date": "2026-02-02",
+                    "min_volume": 150,
+                    "volume_eligible": True,
+                    "liquidity_cumulative": 150,
+                    "liquidity_cumulative_before": 0,
+                    "prior_bar_volume": 0,
+                },
+                {
+                    "date": "2026-02-02T11:00:00",
+                    "session_date": "2026-02-02",
+                    "min_volume": 0,
+                    "volume_eligible": False,
+                    "liquidity_cumulative": 150,
+                    "liquidity_cumulative_before": 150,
+                    "prior_bar_volume": 150,
+                },
+                {
+                    "date": "2026-02-02T12:00:00",
+                    "session_date": "2026-02-02",
+                    "min_volume": 150,
+                    "volume_eligible": True,
+                    "liquidity_cumulative": 300,
+                    "liquidity_cumulative_before": 150,
+                    "prior_bar_volume": 0,
+                },
+                {
+                    "date": "2026-02-02T13:00:00",
+                    "session_date": "2026-02-02",
+                    "min_volume": 150,
+                    "volume_eligible": True,
+                    "has_open_quote": False,
+                    "liquidity_cumulative": 450,
+                    "liquidity_cumulative_before": 300,
+                    "prior_bar_volume": 150,
+                },
+            ],
+        }
+        _, elig_rows = _build_h1_eligible_rows(h1_win, "open", 1)
+        self.assertFalse(elig_rows[1]["entry_eligible"])
+        self.assertFalse(elig_rows[1]["exit_eligible"])
+        self.assertTrue(elig_rows[2]["entry_eligible"])
+        self.assertTrue(elig_rows[2]["exit_eligible"])
+        self.assertFalse(elig_rows[3]["entry_eligible"])
+
+        unk_win = {
+            "timeframe": "1h",
+            "liquidity_gate": 100,
+            "has_native_spread_volume": True,
+            "tradable_every_session": False,
+            "tradable_every_day": False,
+            "rows": [
+                {
+                    "date": "2026-02-02T10:00:00",
+                    "session_date": "2026-02-02",
+                    "min_volume": 150,
+                    "spread_volume": 150,
+                    "liquidity_cumulative": 150,
+                    "margin": 5000.0,
+                },
+                {
+                    "date": "2026-02-02T11:00:00",
+                    "session_date": "2026-02-02",
+                    "min_volume": 0,
+                    "spread_volume": None,
+                    "liquidity_cumulative": 150,
+                    "margin": 5000.0,
+                },
+                {
+                    "date": "2026-02-03T10:00:00",
+                    "session_date": "2026-02-03",
+                    "min_volume": 150,
+                    "spread_volume": 150,
+                    "liquidity_cumulative": 150,
+                    "margin": 5000.0,
+                },
+            ],
+        }
+        sliced = slice_window_through(unk_win, "2026-02-02T23:59:59")
+        self.assertFalse(sliced["tradable_every_session"])
+        self.assertFalse(sliced["tradable_every_day"])
 
     def test_execute_calendar_proof_honors_threshold_pp_and_rejects_bad_params(self):
         days = [f"2026-01-{day:02d}" for day in range(1, 28)]

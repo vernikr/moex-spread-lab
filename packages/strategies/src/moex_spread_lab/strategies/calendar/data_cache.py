@@ -141,6 +141,18 @@ def resolve_intraday_till(root: Path, windows: list[dict[str, Any]]) -> str | No
     return last[:10] if last else None
 
 
+def _row_has_unknown_h1_volume(row: dict[str, Any], is_native: bool) -> bool:
+    if row.get("min_volume") is None or (
+        "liquidity_volume" in row and row["liquidity_volume"] is None
+    ):
+        return True
+    if is_native:
+        return "spread_volume" in row and row["spread_volume"] is None
+    return ("near_volume" in row and row["near_volume"] is None) or (
+        "far_volume" in row and row["far_volume"] is None
+    )
+
+
 def slice_window_through(window: dict[str, Any], day: str) -> dict[str, Any]:
     if window.get("timeframe") == "1h":
         rows = [
@@ -154,12 +166,17 @@ def slice_window_through(window: dict[str, Any], day: str) -> dict[str, Any]:
         ]
         if len(rows) < 2:
             raise W0Error("Недостаточно часовых наблюдений для проверки параметров")
+        is_native = bool(window.get("has_native_spread_volume"))
+        unknown_sessions = {
+            row["session_date"] for row in rows if _row_has_unknown_h1_volume(row, is_native)
+        }
         session_liq = {
             row["session_date"]: float(row.get("liquidity_cumulative", 0.0)) for row in rows
         }
         min_liq = min(session_liq.values()) if session_liq else 0.0
         tradable = bool(session_liq) and all(
-            v >= window["liquidity_gate"] for v in session_liq.values()
+            s not in unknown_sessions and v >= window["liquidity_gate"]
+            for s, v in session_liq.items()
         )
         return {
             **window,
@@ -167,7 +184,7 @@ def slice_window_through(window: dict[str, Any], day: str) -> dict[str, Any]:
             "last_date": rows[-1]["date"],
             "observations": len(rows),
             "min_liquidity_volume": min_liq,
-            "min_spread_volume": min_liq if window["has_native_spread_volume"] else None,
+            "min_spread_volume": min_liq if is_native else None,
             "tradable_every_day": tradable,
             "tradable_every_session": tradable,
             "max_pair_margin_rub": round(max(float(r["margin"]) for r in rows), 2),

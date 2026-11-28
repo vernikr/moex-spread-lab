@@ -17,7 +17,7 @@ from .h1_candles import (
     select_h1_source_mode,
 )
 
-_H1_ROW_KEYS = "date timestamp session_date benchmark_mark_date spread open_spread spread_price spread_open_price near_close far_close near_price far_price near_open_price far_open_price near_open far_open near_volume far_volume spread_volume spread_trades spread_last_trade min_volume session_liquidity_volume liquidity_cumulative_before liquidity_cumulative prior_bar_volume volume_eligible signal_eligible dev_pp ruonia_rate ruonia_rate_date fx_rate_date days_to_near_expiry dividend_in_window margin mult near_price_raw far_price_raw spread_open"
+_H1_ROW_KEYS = "date timestamp session_date benchmark_mark_date spread open_spread spread_price spread_open_price near_close far_close near_price far_price near_open_price far_open_price near_open far_open near_volume far_volume spread_volume spread_trades spread_last_trade min_volume session_liquidity_volume liquidity_cumulative_before liquidity_cumulative prior_bar_volume volume_eligible signal_eligible has_open_quote dev_pp ruonia_rate ruonia_rate_date fx_rate_date days_to_near_expiry dividend_in_window margin mult near_price_raw far_price_raw spread_open"
 _H1_WINDOW_KEYS = "pair spread_instrument near far first_date last_date near_expiry rows observations min_spread_volume min_liquidity_volume max_pair_margin_rub timeframe price_source price_source_label native_fallback_reason has_native_spread_volume native_spread_order liquidity_source liquidity_gate liquidity_gate_unit liquidity_volume_label liquidity_rule tradable_every_day tradable_every_session session_count source_hashes"
 _SOURCE_KEYS = "near_candles_sha256 far_candles_sha256"
 
@@ -124,8 +124,17 @@ def _build_single_h1_row(st: _H1BuildState, stamp: str) -> dict[str, Any] | None
     s_day = stamp[:10]
     nr, fr = st.near_rows[stamp], st.far_rows[stamp]
     b, c = float(nr["close"]), float(fr["close"])
-    e = float(nr["open"]) if nr["open"] is not None and nr["open"] > 0 else b
-    f = float(fr["open"]) if fr["open"] is not None and fr["open"] > 0 else c
+    near_open_val = nr["open"]
+    far_open_val = fr["open"]
+    near_open_ok = near_open_val is not None and float(near_open_val) > 0
+    far_open_ok = far_open_val is not None and float(far_open_val) > 0
+    open_ok = (
+        near_open_ok
+        and far_open_ok
+        and (not st.is_native or st.source_rows[stamp]["open"] is not None)
+    )
+    e = float(near_open_val) if near_open_val is not None and float(near_open_val) > 0 else b
+    f = float(far_open_val) if far_open_val is not None and float(far_open_val) > 0 else c
     s, h = asof_before(st.fx_dates, st.fx_values, s_day) if st.fx_name else (None, 1.0)
     if h is None:
         return None
@@ -169,6 +178,7 @@ def _build_single_h1_row(st: _H1BuildState, stamp: str) -> dict[str, Any] | None
             v,
             r,
             r,
+            open_ok,
             implied_ruonia_deviation_pp(
                 p, d, st.dividend, o, convergence_supported=bool(st.config.get("convergence"))
             ),

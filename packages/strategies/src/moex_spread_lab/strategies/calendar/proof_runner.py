@@ -92,11 +92,14 @@ def _build_h1_eligible_rows(
     for src in window["rows"]:
         row = dict(src)
         close_ok = bool(row.get("volume_eligible"))
+        bar_vol_ok = float(row.get("min_volume") or 0.0) >= quantity
+        open_quote_ok = bool(row.get("has_open_quote", True))
         fill_ok = (
             float(row.get("liquidity_cumulative_before", 0.0)) >= gate
-            and float(row.get("prior_bar_volume", 0.0)) >= quantity
+            and bar_vol_ok
+            and open_quote_ok
             if is_open
-            else close_ok and float(row.get("min_volume", 0.0)) >= quantity
+            else close_ok and bar_vol_ok
         )
         row["signal_eligible"] = close_ok
         row["entry_eligible"] = bool(fill_ok)

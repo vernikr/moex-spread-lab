@@ -1,5 +1,5 @@
 import { ledgerIndex, refreshSelection } from './charts.js';
-import { $, FILL_RU, GROUP_RU, cls, displayTime, el, fmt, humanCost, humanReason, pct, pp, px, rub, signed, status } from './dom.js';
+import { $, FILL_RU, GROUP_RU, cls, displayTime, el, escapeHtml, fmt, humanCost, humanReason, pct, pp, px, rub, signed, status } from './dom.js';
 import { isIntraday, proofLabel, rowPeriod, state, strategyLabel, timeframeLabel } from './state.js';
 
 const HR = '<hr style="border:0;border-top:1px solid #233648;margin:6px 0">';
@@ -63,11 +63,11 @@ function fillCard(t, side) {
   const [chipCls, chipTxt] = CHIP[t.result] || CHIP.flat;
   const g = el('div', 'cardgroup');
   const sig = isEntry
-    ? `<div><span class="k">ноги</span> ${t.legs}</div><div><span class="k">сигнал</span> ${t.signal.kind} ${t.signal.value != null ? fmt(t.signal.value, 2) : ''}${t.signal.reason ? ` · ${humanReason(t.signal.reason)}` : ''} · ${displayTime(t.signal.date)}</div>`
+    ? `<div><span class="k">ноги</span> ${escapeHtml(t.legs)}</div><div><span class="k">сигнал</span> ${escapeHtml(t.signal.kind)} ${t.signal.value != null ? fmt(t.signal.value, 2) : ''}${t.signal.reason ? ` · ${escapeHtml(humanReason(t.signal.reason))}` : ''} · ${displayTime(t.signal.date)}</div>`
     : '';
   const pnl = isEntry
     ? ''
-    : `<div><span class="k">причина выхода</span> ${humanReason(t.exit_reason)}</div>${HR}<div><span class="k">гросс</span> <b>${rub(t.gross_rub, 2)}</b>${t.gross_pts != null ? ` (${fmt(t.gross_pts, 3)} п.)` : ''}</div><div><span class="k">нетто</span> <b class="${cls(t.net_rub)}">${rub(t.net_rub, 2)}</b> · <span class="${chipCls}">${chipTxt}</span></div><div><span class="k">LQDT на маржу</span> −${fmt(t.lqdt_on_margin_rub, 2)} ₽ · <span class="k">сверх LQDT</span> <b class="${cls(t.excess_rub)}">${rub(t.excess_rub, 2)}</b></div><div><span class="k">маржа</span> <b>${fmt(t.margin_rub)} ₽</b></div>`;
+    : `<div><span class="k">причина выхода</span> ${escapeHtml(humanReason(t.exit_reason))}</div>${HR}<div><span class="k">гросс</span> <b>${rub(t.gross_rub, 2)}</b>${t.gross_pts != null ? ` (${fmt(t.gross_pts, 3)} п.)` : ''}</div><div><span class="k">нетто</span> <b class="${cls(t.net_rub)}">${rub(t.net_rub, 2)}</b> · <span class="${chipCls}">${chipTxt}</span></div><div><span class="k">LQDT на маржу</span> −${fmt(t.lqdt_on_margin_rub, 2)} ₽ · <span class="k">сверх LQDT</span> <b class="${cls(t.excess_rub)}">${rub(t.excess_rub, 2)}</b></div><div><span class="k">маржа</span> <b>${fmt(t.margin_rub)} ₽</b></div>`;
   const fees = Object.entries(b.costs || {});
   g.innerHTML =
     `<h4>${isEntry ? 'Вход' : 'Выход'} #${t.number} — ${t.side === 'long_spread' ? 'лонг спред' : 'шорт спред'} · контрактов: ${t.quantity}</h4>` +
@@ -77,7 +77,7 @@ function fillCard(t, side) {
     `<div><span class="k">${isIntraday(state.payload.selection?.timeframe) ? 'объём за бар' : 'объём за день'}</span> ближняя ${fmt(b.near_volume)} · дальняя ${fmt(b.far_volume)}${b.spread_volume != null ? ` · спред ${fmt(b.spread_volume)}` : ''}</div>` +
     pnl +
     `${HR}<h4 style="margin-top:0">Комиссии — эта сторона</h4>` +
-    fees.map(([k, v]) => `<div><span class="k">${humanCost(k)}</span> ${fmt(v, 2)} ₽</div>`).join('') +
+    fees.map(([k, v]) => `<div><span class="k">${escapeHtml(humanCost(k))}</span> ${fmt(v, 2)} ₽</div>`).join('') +
     `<div><span class="k">итого</span> <b>${fmt(fees.reduce((a, [, c]) => a + c, 0), 2)} ₽</b></div>`;
   return g;
 }
@@ -163,7 +163,7 @@ export function renderTable() {
       tr,
       ev
         ? ev.map(e => `<span class="badge ${e.side}${e.side === 'exit' && e.t.open_at_end ? ' open' : ''}" data-trade="${e.t.number}" title="клик — подсветка сделки на графике">${e.side === 'entry' ? 'ВХОД' : 'ВЫХОД'} #${e.t.number} · ${e.t.quantity} контр.</span>`).join(' ')
-        : (state.payload.skipped_entries || []).filter(x => x.date === r.date).map(x => `<span class="warn">Пропуск: ${x.reason}</span>`).join(' '),
+        : (state.payload.skipped_entries || []).filter(x => x.date === r.date).map(x => `<span class="warn">Пропуск: ${escapeHtml(x.reason)}</span>`).join(' '),
     );
     tr.querySelectorAll('.badge[data-trade]').forEach(b =>
       b.addEventListener('click', e => {
@@ -211,14 +211,18 @@ export function renderTable() {
 
 function csvCell(v) {
   const s = String(v ?? '');
-  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
 export function downloadCsv() {
   if (!state.payload) return;
   const L = ledgerIndex();
-  const entryQty = Object.fromEntries(state.payload.trades.map(t => [t.entry.date, t.quantity]));
-  const exitQty = Object.fromEntries(state.payload.trades.map(t => [t.exit.date, t.quantity]));
+  const entryQty = {};
+  const exitQty = {};
+  for (const t of state.payload.trades) {
+    entryQty[t.entry.date] = (entryQty[t.entry.date] || 0) + t.quantity;
+    exitQty[t.exit.date] = (exitQty[t.exit.date] || 0) + t.quantity;
+  }
   const head = [
     'date', 'period', 'signal', 'near', 'near_open', 'near_volume', 'far', 'far_open', 'far_volume',
     'spread', 'spread_open', 'spread_last_trade', 'spread_rel', 'spread_open_rel', 'spread_last_trade_rel',

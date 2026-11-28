@@ -19,8 +19,8 @@ from moex_spread_lab.data import universe as _catalog
 from moex_spread_lab.strategies.registry import builtin_pair_strategies
 
 from ..funding_carry.study import fetch_history
-from ..pair_data import leg_volumes, positive_leg_days
-from .inputs import ScreenerInputs, _candle_summary, _make_proof_funding
+from ..pair_data import daily_volumes, leg_volumes, positive_leg_days
+from .inputs import BarSeries, CandleSummary, ScreenerInputs, _candle_summary, _make_proof_funding
 
 # Typed aliases of the core research registry: same objects, precise static types.
 HISTORY_WINDOWS: dict[str, tuple[str, str]] = _catalog.HISTORY_WINDOWS
@@ -54,6 +54,8 @@ class FundingStatuses(Protocol):
         positive_days: set[str],
         price_files: Sequence[Path],
         funding_files: Sequence[Path],
+        *,
+        through: str | None = None,
     ) -> tuple[dict[str, bool], dict[str, str]]: ...
 
 
@@ -86,15 +88,41 @@ def _load_instruments(inputs: ScreenerInputs) -> Instruments:
     return instruments
 
 
+def _bar_within_through(begin: Any, through: str) -> bool:
+    stamp = str(begin)
+    if len(through) == 10:
+        return stamp[:10] <= through
+    return stamp[:19].replace(" ", "T") <= through[:19].replace(" ", "T")
+
+
+def _leg_summary_through(series: BarSeries, through: str | None) -> CandleSummary:
+    if through is None:
+        return _candle_summary(series)
+    rows = [
+        row
+        for row in series.rows
+        if row.get("begin") and _bar_within_through(row["begin"], through)
+    ]
+    timestamps = {str(row["begin"]) for row in rows if row.get("close") is not None}
+    return CandleSummary(timestamps=frozenset(timestamps), volumes=daily_volumes(rows))
+
+
 def _pair_bar_stats(
-    inputs: ScreenerInputs, pair_id: str, near: str, far: str, timeframe: str
+    inputs: ScreenerInputs,
+    pair_id: str,
+    near: str,
+    far: str,
+    timeframe: str,
+    through: str | None = None,
 ) -> tuple[str | None, str | None, int, set[str], dict[str, float] | None]:
     try:
-        near_sum = _candle_summary(
-            inputs.bars(pair_id, near, timeframe, columns=("begin", "close", "volume"))
+        near_sum = _leg_summary_through(
+            inputs.bars(pair_id, near, timeframe, columns=("begin", "close", "volume")),
+            through,
         )
-        far_sum = _candle_summary(
-            inputs.bars(pair_id, far, timeframe, columns=("begin", "close", "volume"))
+        far_sum = _leg_summary_through(
+            inputs.bars(pair_id, far, timeframe, columns=("begin", "close", "volume")),
+            through,
         )
     except W0Error:
         return None, None, 0, set(), None
@@ -118,10 +146,10 @@ def _resolve_proof_availability(
     pair: dict[str, str],
     spec: TimeframeSpec,
     funding: FundingStatuses,
-    pos_days: set[str],
-    obs: int,
+    stats: tuple[set[str], int, str | None],
     file_sets: tuple[FileSet, FileSet],
 ) -> tuple[dict[str, bool], dict[str, str]]:
+    pos_days, obs, through = stats
     price_files, funding_files = file_sets
     days: set[str] = (
         pos_days
@@ -131,7 +159,11 @@ def _resolve_proof_availability(
     proof_available: dict[str, bool]
     reasons: dict[str, str]
     if spec.supports_funding_strategy:
-        proof_available, reasons = funding.statuses(pair, days, price_files, funding_files)
+        proof_available, reasons = (
+            funding.statuses(pair, days, price_files, funding_files)
+            if through is None
+            else funding.statuses(pair, days, price_files, funding_files, through=through)
+        )
     else:
         missing_price = next(
             (path for path in price_files if not inputs.bar_store.source_available(path)),
@@ -191,13 +223,16 @@ def _catalog_pair_entry(
     inputs: ScreenerInputs,
     pair: dict[str, str],
     spec: TimeframeSpec,
-    timeframe: str,
     funding: FundingStatuses,
     instruments: Instruments,
     initial_capital: float,
+    through: str | None = None,
 ) -> PairEntry:
+    timeframe = spec.id
     pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
-    h_from, h_to, obs, pos_days, volumes = _pair_bar_stats(inputs, pair_id, near, far, timeframe)
+    h_from, h_to, obs, pos_days, volumes = _pair_bar_stats(
+        inputs, pair_id, near, far, timeframe, through=through
+    )
     price_files = (
         inputs.candles(pair_id, near, timeframe),
         inputs.candles(pair_id, far, timeframe),
@@ -213,7 +248,7 @@ def _catalog_pair_entry(
     )
     tradable = volumes is not None and min(volumes.values()) >= MIN_DAILY_VOLUME
     proof_available, reasons = _resolve_proof_availability(
-        inputs, pair, spec, funding, pos_days, obs, (price_files, funding_files)
+        inputs, pair, spec, funding, (pos_days, obs, through), (price_files, funding_files)
     )
     available = {
         "mean_reversion": tradable and proof_available["mean_reversion"],
@@ -264,13 +299,14 @@ def catalog(
     initial_capital: float = INITIAL_CAPITAL,
     timeframe: str = DEFAULT_TIMEFRAME,
     fetch_fn: Callable[..., dict[str, Any]] = fetch_history,
+    through: str | None = None,
 ) -> dict[str, Any]:
     spec = get_timeframe(timeframe)
     resolved_funding = funding or _make_proof_funding(inputs, fetch_fn=fetch_fn)
     instruments = _load_instruments(inputs)
     pairs = [
         _catalog_pair_entry(
-            inputs, pair, spec, timeframe, resolved_funding, instruments, initial_capital
+            inputs, pair, spec, resolved_funding, instruments, initial_capital, through=through
         )
         for pair in registry
     ]

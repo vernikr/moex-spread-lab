@@ -145,14 +145,18 @@ class ProofFunding:
         positive_days: set[str],
         funding_files: Sequence[Path],
         reasons: dict[str, str],
+        through: str | None = None,
     ) -> None:
+        cutoff = through[:10] if through is not None else None
         try:
             if not funding_files[0].is_file():
                 raise W0Error(f"Нет локальных данных SWAPRATE: {funding_files[0].name}.")
             if not positive_days:
                 raise W0Error("Нет общих дней с положительным объёмом обеих ног.")
             book = self.timeline(pair)
-            needed = book.require(positive_days)
+            needed = book.require(positive_days, through=cutoff)
+            if not needed:
+                raise W0Error("Нет расчётных дат в выбранном периоде.")
         except (ValueError, OSError, KeyError, TypeError) as exc:
             for name in ("mean_reversion", "funding_only"):
                 reasons.setdefault(name, str(exc))
@@ -160,13 +164,13 @@ class ProofFunding:
         if "funding_only" in reasons:
             return
         try:
-            settles = self.settlement_days(pair)
+            settles = {d for d in self.settlement_days(pair) if cutoff is None or d <= cutoff}
             needed_settles = {d for d, m in needed.items() if m.kind != "no_clearing"}
             if absent := sorted(needed_settles - settles):
                 raise W0Error(
                     f"Нет расчётной цены одной из ног за {absent[0]}. Среднее заменяет только ставку, не цену."
                 )
-            book.require(settles)
+            book.require(settles, through=cutoff)
         except (ValueError, OSError, KeyError, TypeError) as exc:
             reasons["funding_only"] = str(exc)
 
@@ -176,6 +180,8 @@ class ProofFunding:
         positive_days: set[str],
         price_files: Sequence[Path],
         funding_files: Sequence[Path],
+        *,
+        through: str | None = None,
     ) -> tuple[dict[str, bool], dict[str, str]]:
         """Different signal inputs; funding permission never grants a missing settlement price."""
         is_perp = pair["family"] == "perpetual_quarterly_same_asset"
@@ -186,7 +192,7 @@ class ProofFunding:
             elif missing := next((p for p in files if not p.is_file()), None):
                 reasons[name] = f"Нет локальных данных: {missing.name}."
         if is_perp and len(reasons) < 2:
-            self._verify_perpetual_funding(pair, positive_days, funding_files, reasons)
+            self._verify_perpetual_funding(pair, positive_days, funding_files, reasons, through)
         return {s: s not in reasons for s in ("mean_reversion", "funding_only")}, reasons
 
     def settlement_days(self, pair: Mapping[str, str]) -> set[str]:

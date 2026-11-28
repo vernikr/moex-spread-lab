@@ -275,3 +275,49 @@ def test_build_result_honors_initial_capital_across_branches_and_stress(tmp_path
         round((carry["daily"][-1]["B"] / 100000.0 - 1) * 100, 3)
     )
     assert carry["metrics"]["lqdt_return_pct"] > 0
+
+
+def test_build_result_through_ignores_post_cutoff_thin_volume_and_funding_gaps(
+    tmp_path: Path,
+) -> None:
+    days = _write_fixture(tmp_path)
+    cutoff = days[30].isoformat()
+    late_day = days[-1].isoformat()
+
+    # Inject post-through thin volume (< MIN_DAILY_VOLUME) on CNYRUBF and GLDRUBF candles.
+    for secid in ("CNYRUBF", "GLDRUBF"):
+        candle_path = tmp_path / "data/w1/candles" / f"{secid}_1d.json"
+        doc = json.loads(candle_path.read_text(encoding="utf-8"))
+        for row in doc["rows"]:
+            if str(row["begin"])[:10] == late_day:
+                row["volume"] = 5
+        candle_path.write_text(json.dumps(doc), encoding="utf-8")
+
+    # Also drop post-through SWAPRATE on CNYRUBF across 4 trailing sessions (> MAX_GAP).
+    start, end = HISTORY_WINDOWS["CNYRUBF/CRZ6"]
+    hist_path = tmp_path / "data/carry-history-cache" / f"CNYRUBF-{start}-{end}-0.json"
+    hist_doc = json.loads(hist_path.read_text(encoding="utf-8"))
+    block = hist_doc["payload"]["history"]
+    date_idx = block["columns"].index("TRADEDATE")
+    swap_idx = block["columns"].index("SWAPRATE")
+    trailing = {d.isoformat() for d in days[-4:]}
+    for row in block["data"]:
+        if row[date_idx] in trailing:
+            row[swap_idx] = None
+    hist_path.write_text(json.dumps(hist_doc), encoding="utf-8")
+
+    inputs = ScreenerInputs(tmp_path)
+    # Full-span run fails closed because of post-cutoff thin volume / funding gap:
+    with pytest.raises(ScreenerError):
+        build_result(inputs, {"pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"})
+    # Causal slice up to cutoff succeeds without leaking post-cutoff issues:
+    res = build_result(
+        inputs,
+        {
+            "pair": "CNYRUBF/CRZ6",
+            "strategy": "mean_reversion",
+            "parameters": {"lookback": 10, "entry_z": 1.5, "exit_z": 0.5},
+        },
+        through=cutoff,
+    )
+    assert res["daily"][-1]["date"] <= cutoff

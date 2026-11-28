@@ -272,6 +272,7 @@ def build_result(
         initial_capital=initial,
         timeframe=timeframe,
         fetch_fn=fetch_fn,
+        through=through,
     )["pairs"][0]
     if not entry["strategies"][strategy]:
         raise ScreenerError(

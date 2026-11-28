@@ -90,24 +90,26 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
 
     class Handler(LoopbackHandler):
         def do_GET(self) -> None:
+            path = split_path(self.path)
             if (
-                (self.path.startswith("/api/dev/") and not self.local_dev_request())
+                (path.startswith("/api/dev/") and not self.local_dev_request())
                 or not self.local_request()
                 or not self.local_origin()
             ):
                 self.send_json(403, {"error": "local host only"})
                 return
-            dispatch_get(self, store, split_path(self.path))
+            dispatch_get(self, store, path)
 
         def do_POST(self) -> None:
+            path = split_path(self.path)
             if (
-                (self.path.startswith("/api/dev/") and not self.local_dev_request())
+                (path.startswith("/api/dev/") and not self.local_dev_request())
                 or not self.local_request()
                 or not self.local_origin()
             ):
                 self.send_json(403, {"error": "local origin only"})
                 return
-            dispatch_post(self, store, split_path(self.path))
+            dispatch_post(self, store, path)
 
     return Handler
 

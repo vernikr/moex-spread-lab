@@ -317,6 +317,21 @@ class WebHttpRoutesTests(unittest.TestCase):
             self.assertEqual(self._host_status(PREVIEW.upper(), f"HTTPS://{PREVIEW.upper()}"), 200)
             self.assertEqual(self._host_status("evil.example:8899"), 403)
             self.assertEqual(self._host_status(PREVIEW, "https://evil.example"), 403)
+            self.assertEqual(
+                self._request("GET", f"http://{PREVIEW}/api/dev/health", headers={"Host": PREVIEW})[
+                    0
+                ],
+                403,
+            )
+            self.assertEqual(
+                self._request(
+                    "POST",
+                    f"http://{PREVIEW}/api/dev/probe",
+                    body={"action": "catalog"},
+                    headers={"Host": PREVIEW},
+                )[0],
+                403,
+            )
         with mock.patch.dict("os.environ", {"MSL_ALLOWED_HOSTS": "*"}):
             self.assertEqual(self._host_status(PREVIEW, f"https://{PREVIEW}"), 200)
 

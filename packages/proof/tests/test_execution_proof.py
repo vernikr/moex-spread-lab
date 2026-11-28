@@ -1,13 +1,9 @@
 import json
-import math
 import unittest
-from datetime import UTC, date, datetime
-from pathlib import Path
 
-from moex_spread_lab.data import HISTORY_FIELDS, history_url
 from moex_spread_lab.proof.service import ProofService
 from perf_equivalence_fixtures import temporary_workspace
-from synthetic_history import weekdays
+from workspace_fixtures import build_pair_root
 
 MEAN_REVERSION_REQUEST = {
     "universe": "pair_screen",
@@ -18,133 +14,10 @@ MEAN_REVERSION_REQUEST = {
     "parameters": {"entry_z": 1.5, "exit_z": 0.3, "lookback": 20},
 }
 
-START, END = "2025-06-17", "2026-10-27"
-
-
-def _near_close(i: int) -> float:
-    return 12 + 0.9 * math.sin(i * 0.55) + i * 0.012
-
-
-def _far_close(i: int) -> float:
-    return 13.1 + 0.9 * math.sin(i * 0.55 + 0.4) + i * 0.012
-
-
-def _write_carry_history(root: Path, secid: str, days: list[date], close) -> None:
-    data = []
-    for i, d in enumerate(days):
-        settle = close(i)
-        data.append(
-            [
-                "RFUD",
-                d.isoformat(),
-                secid,
-                round(settle, 4),
-                round(settle, 4),
-                0.015,
-                100000,
-                500000.0,
-                5000,
-                round(settle, 4),
-                250,
-                "CNY",
-            ]
-        )
-    path = root / "data" / "carry-history-cache" / f"{secid}-{START}-{END}-0.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    url = history_url(secid, START, END, 0, HISTORY_FIELDS)
-    payload = {
-        "history": {"columns": list(HISTORY_FIELDS), "data": data},
-        "history.cursor": {
-            "columns": ["INDEX", "TOTAL", "PAGESIZE"],
-            "data": [[0, len(data), 100]],
-        },
-    }
-    path.write_text(
-        json.dumps(
-            {
-                "url": url,
-                "payload": payload,
-                "raw_response_sha256": "ab" * 32,
-                "cached_at": datetime.now(UTC).isoformat(),
-            }
-        ),
-        encoding="utf-8",
-    )
-
-
-def _build_root(root: Path) -> list[date]:
-    days = weekdays(date(2025, 6, 17), count=55)
-    (root / "data/w1/candles").mkdir(parents=True)
-    (root / "data/benchmark").mkdir(parents=True)
-    (root / "data/w1").mkdir(parents=True, exist_ok=True)
-    (root / "data/w1/current-intake.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "iss-intake.v1",
-                "instruments": [
-                    {
-                        "secid": secid,
-                        "stable_id": secid,
-                        "board": "RFUD",
-                        "expiry": "2026-12-17",
-                        "lot_size": 1000,
-                        "tick_size": 0.001,
-                        "tick_value": 1,
-                        "initial_margin": 1000,
-                        "source_vintage": "current_snapshot",
-                    }
-                    for secid in ("CNYRUBF", "CRZ6")
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    (root / "data/benchmark/lqdt-lineage.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "lqdt-lineage.v1",
-                "rows": [
-                    {
-                        "date": day.isoformat(),
-                        "price": 1 + i * 0.0004,
-                        "source_kind": "observed",
-                        "source_ticker": "LQDT",
-                    }
-                    for i, day in enumerate(days)
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    for secid, close in (("CNYRUBF", _near_close), ("CRZ6", _far_close)):
-        rows = []
-        for i, day in enumerate(days):
-            value = close(i)
-            rows.append(
-                {
-                    "begin": f"{day.isoformat()} 00:00:00",
-                    "open": round(value - 0.06, 4),
-                    "close": round(value, 4),
-                    "high": round(value + 0.1, 4),
-                    "low": round(value - 0.1, 4),
-                    "volume": 5000,
-                    "price_proxy_kind": "candle_close",
-                }
-            )
-        (root / f"data/w1/candles/{secid}_1d.json").write_text(
-            json.dumps(
-                {"schema_version": "iss-candles.v1", "secid": secid, "interval": 24, "rows": rows}
-            ),
-            encoding="utf-8",
-        )
-    _write_carry_history(root, "CNYRUBF", days, _near_close)
-    _write_carry_history(root, "CRZ6", days, _far_close)
-    return days
-
 
 class ExecutionProofTests(unittest.TestCase):
     def setUp(self):
-        self.root = temporary_workspace(self, _build_root)
+        self.root = temporary_workspace(self, build_pair_root)
         self.proof = ProofService(self.root)
 
     def test_catalog_lists_both_universes_and_pair_availability(self):

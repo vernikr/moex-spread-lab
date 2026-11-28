@@ -11,7 +11,7 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.strategy_catalog import get_strategy_axes
 from perf_equivalence_fixtures import assert_pool_parity, assert_same_fields, installed_plugin
-from test_execution_proof import _far_close, _near_close
+from workspace_fixtures import far_close, near_close
 
 PLUGIN_SOURCE = """
 from dataclasses import replace
@@ -65,7 +65,7 @@ def _reject_invalid_pair_replays(service, candidate):
 
 
 def _hourly_pair_workspace(root):
-    for secid, close_fn in (("CNYRUBF", _near_close), ("CRZ6", _far_close)):
+    for secid, close_fn in (("CNYRUBF", near_close), ("CRZ6", far_close)):
         path = root / "data/w1/candles" / (secid + "_1d.json")
         daily = json.loads(path.read_text())
         hourly = []

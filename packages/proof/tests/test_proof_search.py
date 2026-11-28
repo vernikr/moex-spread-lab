@@ -27,8 +27,7 @@ from moex_spread_lab.proof.proof_search import (
 )
 from moex_spread_lab.proof.service import ProofService, benchmark_marks
 from moex_spread_lab.proof.strategy_catalog import get_strategy_axes
-from test_calendar_proof import _build_root as build_calendar_root
-from test_execution_proof import _build_root as build_pair_root
+from workspace_fixtures import build_calendar_root, build_pair_root
 
 PAIR = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}
 

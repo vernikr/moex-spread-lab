@@ -2,8 +2,7 @@
 
 import json
 
-from test_calendar_proof import _build_root as calendar_root
-from test_execution_proof import _build_root as pair_root
+from workspace_fixtures import build_calendar_root, build_pair_root, write_calendar_fixture_history
 
 # Canonical replay rows over the synthetic `fixture` workspace: the pair-screen
 # mean-reversion winner, the native SR calendar and its flat SRM3/SRU3 sibling.
@@ -26,13 +25,13 @@ FLAT = {**CAL, "pair": "SRM3/SRU3"}
 
 
 def fixture(root):
-    pair_root(root)
+    build_pair_root(root)
     paths = [
         (root / "data/w1/current-intake.json", "instruments"),
         (root / "data/benchmark/lqdt-lineage.json", "rows"),
     ]
     previous = [json.loads(p.read_text()) for p, _ in paths]
-    calendar_root(root)
+    build_calendar_root(root)
     for (path, key), data in zip(paths, previous, strict=True):
         if key == "instruments":
             for contract in data[key]:
@@ -45,15 +44,13 @@ def fixture(root):
 
 def two_calendar_windows(root):
     """A second, deliberately flat spread in the *same* asset's lower picker list."""
-    from test_calendar_proof import _write_history
-
     fixture(root)
     path = next((root / "data/spread-history-cache").glob("SRM3-*.json"))
     data = json.loads(path.read_text())["payload"]["history"]
     cols = data["columns"]
     rows = data["data"]
     # The next near must expire before the last cached observation to form a complete window.
-    _write_history(root, "SRM3", rows[:-1])
+    write_calendar_fixture_history(root, "SRM3", rows[:-1])
     far = []
     spread = []
     for r in rows:
@@ -67,8 +64,8 @@ def two_calendar_windows(root):
             s[i] = 50
         far.append(f)
         spread.append(s)
-    _write_history(root, "SRU3", far)
-    _write_history(root, "SRM3SRU3", spread)
+    write_calendar_fixture_history(root, "SRU3", far)
+    write_calendar_fixture_history(root, "SRM3SRU3", spread)
 
 
 def screen_failures(root, *, thin_calendar=False):

@@ -5,7 +5,7 @@ import json
 from moex_spread_lab.data import history_url
 from moex_spread_lab.data.universe import HISTORY_WINDOWS
 from moex_spread_lab.strategies.pair_screener import ScreenerInputs
-from test_execution_proof import _build_root
+from workspace_fixtures import build_pair_root
 
 PAIR = "CNYRUBF/CRZ6"
 WEEKEND_PAIR = "GAZPF/GZH6"
@@ -47,7 +47,7 @@ def change(root, secid, values, *, pair=PAIR, field="SWAPRATE", remove=False):
 
 
 def fixture(root):
-    return [d.isoformat() for d in _build_root(root)]
+    return [d.isoformat() for d in build_pair_root(root)]
 
 
 def weekend(root):

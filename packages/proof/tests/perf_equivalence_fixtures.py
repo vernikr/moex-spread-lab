@@ -14,7 +14,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import ExitStack, closing, contextmanager
-from datetime import UTC, date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -22,16 +22,15 @@ from unittest.mock import patch
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.settings import ResearchSettings, save_settings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
-from moex_spread_lab.data import history_url
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.proof.strategy_catalog import (
     clear_strategy_registry_cache,
     get_strategy_registry,
 )
-from moex_spread_lab.strategies.calendar.calendar_spreads import HISTORY_FIELDS, HISTORY_FROM
 from synthetic_history import iso_weekdays as _weekdays
 from synthetic_history import write_h1_candles as _write_h1_candles
+from workspace_fixtures import write_calendar_history
 
 TILL = "2023-06-15"
 
@@ -178,30 +177,6 @@ def _build_pair_h1_candles(root: Path, h1_days: list[str]) -> None:
     _write_h1_candles(root, "candles-screen", "CNYRUBF", perp_rows)
     _write_h1_candles(root, "candles-screen", "CRZ6", crz6_rows)
     _write_h1_candles(root, "candles-screen", "CRM6", crm6_rows)
-
-
-def write_calendar_history(root, secid, rows, *, response_hash):
-    url = history_url(secid, HISTORY_FROM, TILL, 0, HISTORY_FIELDS)
-    payload = {
-        "history": {"columns": list(HISTORY_FIELDS), "data": rows},
-        "history.cursor": {
-            "columns": ["INDEX", "TOTAL", "PAGESIZE"],
-            "data": [[0, len(rows), 100]],
-        },
-    }
-    path = root / "data/spread-history-cache" / f"{secid}-{HISTORY_FROM}-{TILL}-0.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "url": url,
-                "payload": payload,
-                "raw_response_sha256": response_hash,
-                "cached_at": datetime.now(UTC).isoformat(),
-            }
-        ),
-        encoding="utf-8",
-    )
 
 
 def _write_cal_eod(root, secid, days, row_fn):

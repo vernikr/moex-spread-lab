@@ -10,8 +10,7 @@ import pytest
 from funding_fixtures import fixture as funding_fixture
 from funding_fixtures import weekend
 from proof_fixtures import fixture, two_calendar_windows
-from test_calendar_proof import _build_root as calendar_root
-from test_execution_proof import _build_root as pair_root
+from workspace_fixtures import build_calendar_root, build_pair_root
 
 
 def _snapshot(root: Path) -> tuple[int, str]:
@@ -32,8 +31,12 @@ def _funding_weekend(root: Path) -> None:
 @pytest.mark.parametrize(
     ("builder", "count", "digest"),
     [
-        (pair_root, 6, "d9214649bfe00267c2a78e8077649a1db2bb99dff0ad9a76f193d0098191acdd"),
-        (calendar_root, 6, "f4bd59c80d7523b98a0cc82d88c838b270cd06221ff96b6d20086b495a0aa96b"),
+        (build_pair_root, 6, "d9214649bfe00267c2a78e8077649a1db2bb99dff0ad9a76f193d0098191acdd"),
+        (
+            build_calendar_root,
+            6,
+            "f4bd59c80d7523b98a0cc82d88c838b270cd06221ff96b6d20086b495a0aa96b",
+        ),
         (fixture, 10, "f0019ab45d19d2a44bee34c99ab659442404fe6f26e0e28ab06c4a9cb6dc9621"),
         (
             two_calendar_windows,
@@ -51,13 +54,12 @@ def test_synthetic_workspace_content_contract(tmp_path, builder, count, digest):
 def _test_imports(source: str) -> list[str]:
     violations = []
     for node in ast.walk(ast.parse(source)):
-        names = (
-            [node.module or ""]
-            if isinstance(node, ast.ImportFrom)
-            else [alias.name for alias in node.names]
-            if isinstance(node, ast.Import)
-            else []
-        )
+        if isinstance(node, ast.ImportFrom):
+            names = [node.module or "", *(alias.name for alias in node.names)]
+        elif isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        else:
+            continue
         violations.extend(name for name in names if name.split(".")[-1].startswith("test_"))
     return violations
 
@@ -65,4 +67,13 @@ def _test_imports(source: str) -> list[str]:
 def test_fixture_import_rule_detects_test_modules():
     assert _test_imports("from test_execution_proof import _build_root") == ["test_execution_proof"]
     assert _test_imports("import package.test_calendar_proof") == ["package.test_calendar_proof"]
+    assert _test_imports("from package import test_calendar_proof") == ["test_calendar_proof"]
     assert _test_imports("from workspace_fixtures import build_pair_root") == []
+
+
+def test_shared_fixtures_do_not_import_test_modules():
+    root = Path(__file__).resolve().parents[3] / "tests"
+    fixture_modules = [*sorted(root.glob("*_fixtures.py")), root / "synthetic_history.py"]
+    assert fixture_modules
+    for path in fixture_modules:
+        assert _test_imports(path.read_text()) == [], str(path)

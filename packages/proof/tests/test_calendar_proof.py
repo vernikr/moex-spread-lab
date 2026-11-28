@@ -1,15 +1,14 @@
 """Calendar proof characterization tests.
 
-The synthetic fixture builders and named assertion helpers live alongside the
-tests below; ``perf_equivalence_fixtures`` supplies the shared workspace and
-history-cache primitives they reuse.
+Shared synthetic workspace builders live in ``tests/workspace_fixtures.py``;
+named assertion helpers remain alongside the tests below.
 """
 
 import json
 import math
 import os
 import unittest
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -20,15 +19,9 @@ from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.calendar.calendar_spreads import (
     CalendarData,
 )
-from perf_equivalence_fixtures import temporary_workspace, write_calendar_history
-from synthetic_history import iso_weekdays_until as _weekdays
+from perf_equivalence_fixtures import temporary_workspace
 from synthetic_history import write_h1_candles as _write_h1_candles
-
-TILL = "2023-06-15"
-
-
-def _write_history(root: Path, secid: str, rows: list[list]) -> None:
-    write_calendar_history(root, secid, rows, response_hash="x")
+from workspace_fixtures import TILL, build_calendar_root
 
 
 def _h1_rows(role: str, volume: int, first_session_volume: int | None = None) -> list[dict]:
@@ -53,64 +46,6 @@ def _h1_rows(role: str, volume: int, first_session_volume: int | None = None) ->
     return rows
 
 
-def _build_root(root: Path) -> None:
-    near_days = _weekdays(date(2022, 12, 12), date(2023, 3, 16))
-    far_days = _weekdays(date(2022, 12, 12), date(2023, 6, 15))
-    far_price = {
-        d: 31000 + 40 * math.sin(i / 2) + (350 if i == 30 else 0) for i, d in enumerate(far_days)
-    }
-
-    def row(secid, d, settle, volume, opening):
-        return [
-            d,
-            secid,
-            opening,
-            settle + 5,
-            settle - 5,
-            settle,
-            settle,
-            volume,
-            20,
-        ]
-
-    _write_history(root, "SRH3", [row("SRH3", d, 30000.0, 9000, 29990.0) for d in near_days])
-    _write_history(
-        root, "SRM3", [row("SRM3", d, far_price[d], 3000, far_price[d] + 8) for d in far_days]
-    )
-    _write_history(
-        root, "SRH3SRM3", [row("SRH3SRM3", d, far_price[d] - 30000.0, 400, 0.0) for d in near_days]
-    )
-    (root / "data/w1").mkdir(parents=True, exist_ok=True)
-    (root / "data/w1/current-intake.json").write_text(
-        json.dumps(
-            {
-                "instruments": [
-                    {
-                        "secid": "SRZ6",
-                        "expiry": "2026-12-17",
-                        "tick_size": 1.0,
-                        "tick_value": 1.0,
-                        "initial_margin": 3000.0,
-                        "settlement": 30000.0,
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    (root / "data/benchmark-cache").mkdir(parents=True, exist_ok=True)
-    (root / "data/benchmark-cache/CBR_RUONIA.json").write_text(
-        json.dumps({"rows": [{"date": "2022-01-01", "rate": 15.0}]}), encoding="utf-8"
-    )
-    (root / "data/benchmark").mkdir(parents=True, exist_ok=True)
-    (root / "data/benchmark/lqdt-lineage.json").write_text(
-        json.dumps(
-            {"rows": [{"date": d, "price": 1.0 + 0.0004 * i} for i, d in enumerate(far_days)]}
-        ),
-        encoding="utf-8",
-    )
-
-
 def test_calendar_asset_signature_checks_later_pages(tmp_path, monkeypatch):
     from moex_spread_lab.data.iss import iss_http
     from moex_spread_lab.strategies.calendar.data_cache import asset_eod_signature
@@ -119,7 +54,7 @@ def test_calendar_asset_signature_checks_later_pages(tmp_path, monkeypatch):
     now = datetime.now(UTC) + timedelta(seconds=1)
     clock = [now]
     monkeypatch.setattr(iss_http, "_cache_now", lambda: clock[0])
-    _build_root(tmp_path)
+    build_calendar_root(tmp_path)
     directory = tmp_path / "data/spread-history-cache"
     first = next(directory.glob("SRH3-*-0.json"))
     second = directory / f"SRH3-{HISTORY_FROM}-{TILL}-100.json"
@@ -135,7 +70,7 @@ def test_calendar_asset_signature_checks_later_pages(tmp_path, monkeypatch):
 def test_calendar_asset_signature_detects_atomic_same_size_same_time_replacement(tmp_path):
     from moex_spread_lab.strategies.calendar.data_cache import asset_eod_signature
 
-    _build_root(tmp_path)
+    build_calendar_root(tmp_path)
     directory = tmp_path / "data/spread-history-cache"
     first = next(directory.glob("SRH3-*-0.json"))
     before = asset_eod_signature(directory, "SR", TILL, ())
@@ -151,7 +86,7 @@ def test_calendar_does_not_reuse_open_day_network_snapshot(tmp_path, monkeypatch
     from moex_spread_lab.data.iss import iss_http
     from moex_spread_lab.strategies.calendar.data_cache import asset_eod_signature
 
-    _build_root(tmp_path)
+    build_calendar_root(tmp_path)
     monkeypatch.setattr(iss_http, "_cache_now", lambda: datetime(2026, 11, 28, 12, tzinfo=UTC))
     data = CalendarData(tmp_path, offline=True)
     old = {"histories": {"SRH3": {}}, "till": "2026-11-28"}
@@ -170,7 +105,7 @@ def test_calendar_does_not_reuse_open_day_network_snapshot(tmp_path, monkeypatch
 def test_calendar_memory_cache_remains_valid_without_file_edits(tmp_path, monkeypatch):
     from moex_spread_lab.data.iss import iss_http
 
-    _build_root(tmp_path)
+    build_calendar_root(tmp_path)
     now = datetime.now(UTC) + timedelta(seconds=1)
     clock = [now]
     monkeypatch.setattr(iss_http, "_cache_now", lambda: clock[0])
@@ -336,7 +271,7 @@ def assert_instrument_provenance(testcase: unittest.TestCase, proof: dict[str, A
 
 class CalendarProofTests(unittest.TestCase):
     def setUp(self):
-        self.root = temporary_workspace(self, _build_root)
+        self.root = temporary_workspace(self, build_calendar_root)
         self.data = CalendarData(self.root)
 
     def test_catalog_lists_window_with_volume_and_capital_flags(self):

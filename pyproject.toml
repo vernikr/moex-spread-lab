@@ -3212,7 +3212,7 @@ paths = ["tests/proof_fixtures.py"]
 
 [[tool.size-report.columns]]
 label = "strategy_fixtures.py"
-paths = ["tests/strategy_fixtures.py"]
+paths = ["tests/strategy_fixtures.py", "packages/strategies/tests/strategy_fixtures.py"]
 
 [[tool.size-report.columns]]
 label = "synthetic_history.py"
@@ -4449,3 +4449,11 @@ paths = ["packages/remote/pyproject.toml"]
 [[tool.size-report.columns]]
 label = "packages/remote/manifest.json"
 paths = ["packages/remote/manifest.json"]
+
+[[tool.size-report.columns]]
+label = "workspace_fixtures.py"
+paths = ["tests/workspace_fixtures.py"]
+
+[[tool.size-report.columns]]
+label = "test_fixture_contract.py"
+paths = ["packages/proof/tests/test_fixture_contract.py"]

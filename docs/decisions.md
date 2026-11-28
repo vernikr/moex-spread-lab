@@ -29,6 +29,8 @@ The proof workbench supersedes the S2 pair table at `/`: library-based auto-tuni
 
 ## Implementation decisions (2026-11-26 – 2026-11-28)
 
+- **Test-fixture ownership (#369).** Strategy-only helpers live with strategy tests; shared synthetic workspace builders live under root `tests/` and are imported by proof and browser fixtures rather than by importing test modules. No production or data contract changed.
+
 - **Remote workspace ownership (#362).** Workstation bridge and isolated benchmark tooling live in `packages/remote`, depend on `core`, and retain the `moex_spread_lab.remote` import path. The root application retains the CLI composition and namespace initializer.
 
 - **Completed ISS history has no age-based expiry (#332).** The user replaced #284's conservative 24-hour limit: a closed range captured after its Moscow end date is reusable without a time limit, subject to page and pagination validation. Open ranges, unknown or future capture times remain ineligible. Historical corrections are possible, so reconciliation is explicit, not automatic; raw-body retention is unchanged.

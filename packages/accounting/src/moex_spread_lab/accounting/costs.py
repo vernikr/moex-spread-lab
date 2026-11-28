@@ -8,12 +8,14 @@ unevidenced, so pricing fails closed instead of charging zero.
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 from moex_spread_lab.core.w0 import W0Error
 
 COST_SCHEMA = "cost-profile.v2"
 COST_COMPONENTS = ("exchange_clearing", "broker", "slippage")
+# RUB: cash below this is float noise from the daily walk, not an unfunded account.
+SHORTFALL_TOLERANCE = 1e-7
 TARIFF_SOURCE = "https://www.moex.com/s93 (fetched 2026-11-08); docs/inputs/moy_online_praym.pdf"
 TAKER_RATE_PERCENT = {
     "currency": 0.00462,
@@ -147,21 +149,43 @@ def cost_totals(trades: list[dict[str, Any]]) -> dict[str, float]:
     return {key: round(value, 2) for key, value in totals.items()}
 
 
+class LqdtOverlay(NamedTuple):
+    """Daily free-cash walk with the shortfall evidence used to reject a run."""
+
+    values: list[float]
+    shortfall_rows: int
+    first_shortfall_index: int | None
+    max_deficit: float
+
+
 def lqdt_overlay_values(
     capital: float,
     cumulative_pnl: list[float],
     margins: list[float],
     benchmark_prices: list[float],
-) -> tuple[list[float], int]:
-    """Free cash compounds with LQDT; reserved margin stays idle in cash (A-11)."""
+) -> LqdtOverlay:
+    """Free cash compounds with LQDT; reserved margin stays idle in cash (A-11).
+
+    A negative free balance is an unfunded account, not LQDT-financed credit: it
+    earns no benchmark return and is reported as a deficit so the caller can
+    reject the run instead of letting the shortfall compound like a loan.
+    """
     free = capital
     values: list[float] = []
-    shortfalls = 0
+    shortfall_rows = 0
+    first_shortfall_index: int | None = None
+    max_deficit = 0.0
     for index, pnl in enumerate(cumulative_pnl):
         growth = benchmark_prices[index] / benchmark_prices[index - 1] if index else 1.0
         previous_pnl = cumulative_pnl[index - 1] if index else 0.0
         previous_margin = margins[index - 1] if index else 0.0
-        free = free * growth + (pnl - previous_pnl) - (margins[index] - previous_margin)
-        shortfalls += free < 0
+        if free > 0:
+            free *= growth
+        free += (pnl - previous_pnl) - (margins[index] - previous_margin)
+        if free < -SHORTFALL_TOLERANCE:
+            shortfall_rows += 1
+            if first_shortfall_index is None:
+                first_shortfall_index = index
+            max_deficit = max(max_deficit, -free)
         values.append(free + margins[index])
-    return values, shortfalls
+    return LqdtOverlay(values, shortfall_rows, first_shortfall_index, max_deficit)

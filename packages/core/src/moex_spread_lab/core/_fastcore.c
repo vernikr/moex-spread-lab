@@ -1193,12 +1193,9 @@ static PyObject *fast_size_proof_metrics(PyObject *Py_UNUSED(self), PyObject *ar
             goto cleanup;
         }
         double growth = (i > 0) ? (prices[i] / prices[i - 1]) : 1.0;
-        wealth = free_cash * growth + posted + step.daily - step.cost;
-        if (pos_trade == NULL) {
-            posted = 0.0;
-        } else if (is_elig || is_entry_elig) {
-            posted = posted_units[i] * (double)pos_trade->quantity;
-        }
+        wealth = fmax(free_cash, 0.0) * growth + fmin(free_cash, 0.0) + posted + step.daily - step.cost;
+        if (pos_trade == NULL) posted = 0.0;
+        else if (is_elig || is_entry_elig) posted = posted_units[i] * (double)pos_trade->quantity;
         free_cash = wealth - posted;
         int shortfall = (free_cash < -1e-7);
         rules.paused |= shortfall;

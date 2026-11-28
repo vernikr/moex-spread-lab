@@ -139,13 +139,30 @@ def test_costs_rejects_invalid_slippage_and_unknown_secid(bad: object) -> None:
 
 
 def test_lqdt_overlay_compounds_free_cash_and_flags_negative_only() -> None:
-    flat, sf0 = lqdt_overlay_values(1000.0, [0, 0, 0], [0, 0, 0], [1.0, 1.1, 1.21])
-    held, sf1 = lqdt_overlay_values(1000.0, [0, 0, 0], [0, 500, 500], [1.0, 1.1, 1.21])
-    assert flat[-1] == pytest.approx(1210.0)
-    assert held[-1] == pytest.approx(1160.0)
-    assert sf0 == sf1 == 0
-    assert lqdt_overlay_values(100.0, [0, -20.0], [0, 80.0], [1.0, 1.0])[1] == 0
-    assert lqdt_overlay_values(100.0, [0, -150.0], [0, 80.0], [1.0, 1.0])[1] == 1
+    flat = lqdt_overlay_values(1000.0, [0, 0, 0], [0, 0, 0], [1.0, 1.1, 1.21])
+    held = lqdt_overlay_values(1000.0, [0, 0, 0], [0, 500, 500], [1.0, 1.1, 1.21])
+    assert flat.values[-1] == pytest.approx(1210.0)
+    assert held.values[-1] == pytest.approx(1160.0)
+    assert (flat.shortfall_rows, flat.first_shortfall_index, flat.max_deficit) == (0, None, 0.0)
+    covered = lqdt_overlay_values(100.0, [0, -20.0], [0, 80.0], [1.0, 1.0])
+    assert covered.shortfall_rows == 0
+    short = lqdt_overlay_values(100.0, [0, -150.0], [0, 80.0], [1.0, 1.0])
+    assert short.shortfall_rows == 1
+    assert (short.first_shortfall_index, short.max_deficit) == (1, 130.0)
+
+
+def test_lqdt_overlay_does_not_finance_a_deficit_at_the_benchmark_rate() -> None:
+    # free cash 100 earns +10% then loses 200 -> -90; the deficit then stays put
+    # instead of compounding at +10% a step into -99 and -108.9.
+    overlay = lqdt_overlay_values(100.0, [0, -200, -200, -200], [0, 0, 0, 0], [1, 1.1, 1.21, 1.331])
+    assert overlay.values == pytest.approx([100.0, -90.0, -90.0, -90.0])
+    assert overlay.shortfall_rows == 3
+    assert overlay.first_shortfall_index == 1
+    assert overlay.max_deficit == pytest.approx(90.0)
+    recovered = lqdt_overlay_values(100.0, [0, -200, -150], [0, 0, 0], [1, 1.1, 1.21])
+    assert recovered.values == pytest.approx([100.0, -90.0, -40.0])
+    assert recovered.first_shortfall_index == 1
+    assert recovered.max_deficit == pytest.approx(90.0)
 
 
 def test_ebs_charge_and_validation() -> None:

@@ -177,10 +177,10 @@ def _account_curve(
             fee += sum(enter["costs"].values())
         cumulative += change - fee + funding_by_date[day] * quantity
         precise_pnl.append(round(capital + cumulative, 8) - capital)
-    values, _ = lqdt_overlay_values(
+    overlay = lqdt_overlay_values(
         capital, precise_pnl, [margin if row["position"] else 0.0 for row in ledger], marks
     )
-    return _excess_drawdown(values, marks, capital)
+    return _excess_drawdown(overlay.values, marks, capital)
 
 
 def _summary_update(

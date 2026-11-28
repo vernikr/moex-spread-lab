@@ -167,14 +167,14 @@ def _account_config(
 
 def _apply_account(daily: list[dict[str, Any]], quantity: int, account: Acct) -> None:
     capital, margin, mark, start = account
-    values, _ = lqdt_overlay_values(
+    overlay = lqdt_overlay_values(
         capital,
         [r["cumulative_gross_pnl"] - r["cumulative_transaction_costs"] for r in daily],
         [margin * quantity if r["position"] else 0.0 for r in daily],
         [mark(r["date"]) for r in daily],
     )
     peak = 0.0
-    for row, value in zip(daily, values, strict=True):
+    for row, value in zip(daily, overlay.values, strict=True):
         row["strategy_value_proxy"] = round(value, 8)
         row["benchmark_value"] = round(capital * mark(row["date"]) / start, 8)
         row["X"] = round(value - row["benchmark_value"], 8)

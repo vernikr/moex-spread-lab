@@ -11,7 +11,12 @@ from pathlib import Path
 from typing import Any, cast
 
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair
-from moex_spread_lab.accounting.costs import lqdt_overlay_values, side_cost, tariff_profile
+from moex_spread_lab.accounting.costs import (
+    LqdtOverlay,
+    lqdt_overlay_values,
+    side_cost,
+    tariff_profile,
+)
 from moex_spread_lab.core.derived_cache import HashedJSONCache
 from moex_spread_lab.core.w0 import W0Error, load_contracts, read_hashed_json
 
@@ -451,23 +456,23 @@ def _run_sim(
 
 def _finalize_daily(
     s: _Sim, margin_leg_sum: float, mark_fn: Callable[[str], dict[str, Any]]
-) -> int:
-    shortfalls = 0
+) -> LqdtOverlay | None:
+    overlay = None
     if s.cfg.cash_in_lqdt:
         margin = margin_leg_sum * s.cfg.qty
-        vals, shortfalls = lqdt_overlay_values(
+        overlay = lqdt_overlay_values(
             s.cfg.capital,
             [r["cumulative_gross_pnl"] - r["cumulative_transaction_costs"] for r in s.daily],
             [margin if r["position"] else 0.0 for r in s.daily],
             [float(mark_fn(r["date"])["price"]) for r in s.daily],
         )
-        for r, val in zip(s.daily, vals, strict=True):
+        for r, val in zip(s.daily, overlay.values, strict=True):
             r["strategy_value_proxy"], r["X"] = _round(val), _round(val - r["benchmark_value"])
     peak = 0.0
     for r in s.daily:
         peak = max(peak, float(r["X"]))
         r["H"], r["D"] = _round(peak), _round(peak - float(r["X"]))
-    return shortfalls
+    return overlay
 
 
 def _build_report(
@@ -479,7 +484,7 @@ def _build_report(
     bench_path, bench_hash, mark_fn, cost_prof, risk = run_info
     cfg, w_obs = s.cfg, s.cfg.warmup
     margin_sum = float(contracts[near]["initial_margin"]) + float(contracts[far]["initial_margin"])
-    shortfalls = _finalize_daily(s, margin_sum, mark_fn)
+    overlay = _finalize_daily(s, margin_sum, mark_fn)
     is_basis, last = cfg.variant == "basis_median", s.daily[-1]
     pos_f = f"mean_previous_{w_obs}_daily_funding_received > 0"
     return {
@@ -539,7 +544,7 @@ def _build_report(
             "open_trade_count": sum(
                 t["status"] == "open_at_data_end_no_executable_exit" for t in s.trades
             ),
-            "cash_shortfall_rows": shortfalls,
+            "cash_shortfall_rows": overlay.shortfall_rows if overlay else 0,
             "final_strategy_value_proxy": last["strategy_value_proxy"],
             "final_benchmark_value": last["benchmark_value"],
             "final_X": last["X"],

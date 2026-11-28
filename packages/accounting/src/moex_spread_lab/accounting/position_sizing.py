@@ -8,7 +8,7 @@ from typing import Any
 from moex_spread_lab.core._fastcore_loader import load_fastcore
 from moex_spread_lab.core.w0 import W0Error, run_id
 
-from .costs import cost_totals
+from .costs import SHORTFALL_TOLERANCE, cost_totals
 from .sizing_fast import (
     Terms,
     carry_settlement,
@@ -168,13 +168,14 @@ class _Replay:
         daily, cost = round(daily + funding, 2), round(cost, 2)
         self.cumulative = round(self.cumulative + daily - cost, 2)
         growth = self.prices[idx] / self.prices[idx - 1] if idx else 1.0
-        self.wealth = self.free * growth + self.posted + daily - cost
+        grown = self.free * growth if self.free > 0 else self.free
+        self.wealth = grown + self.posted + daily - cost
         if self.position is None:
             self.posted = 0.0
         elif self.eligible or self.entry_eligible:
             self.posted = self.terms.posted_margin(idx, self.position["quantity"])
         self.free = self.wealth - self.posted
-        shortfall = self.free < -1e-7
+        shortfall = self.free < -SHORTFALL_TOLERANCE
         self.shortfalls += int(shortfall)
         excess = self.wealth - self.initial * self.prices[idx] / self.prices[0]
         self.peak = max(self.peak, excess)

@@ -397,9 +397,9 @@ def assemble_baseline_report(
     state: Any,
 ) -> dict[str, Any]:
     params = ctx.params
-    cash_shortfall_rows = 0
+    overlay = None
     if params.cash_in_lqdt:
-        values, cash_shortfall_rows = lqdt_overlay_values(
+        overlay = lqdt_overlay_values(
             params.initial_capital,
             [row["strategy_value"] - params.initial_capital for row in state.daily],
             [
@@ -408,7 +408,7 @@ def assemble_baseline_report(
             ],
             [float(row["benchmark_price"]) for row in rows],
         )
-        for row, value in zip(state.daily, values, strict=True):
+        for row, value in zip(state.daily, overlay.values, strict=True):
             row["strategy_value"] = _round(value)
             row["X"] = _round(value - row["benchmark_value"])
     peak = 0.0
@@ -494,7 +494,7 @@ def assemble_baseline_report(
             "benchmark_mark_kinds": sorted(
                 {row.get("benchmark_mark_kind", "daily_close_same_date") for row in state.daily}
             ),
-            "cash_shortfall_rows": cash_shortfall_rows,
+            "cash_shortfall_rows": overlay.shortfall_rows if overlay else 0,
         },
         "trades": state.trades,
         "daily": state.daily,

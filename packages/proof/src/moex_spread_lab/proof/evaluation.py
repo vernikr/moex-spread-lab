@@ -124,8 +124,8 @@ def _wealth_path(
         return [r["account_value_rub"] for r in rows], any(r["cash_shortfall"] for r in rows)
     margins = _held_margins(rows, idx, proof["trades"])
     cumulative_net = [r["cumulative_net_rub"] for r in rows]
-    values, shortfalls = lqdt_overlay_values(initial, cumulative_net, margins, prices)
-    return values, bool(shortfalls)
+    overlay = lqdt_overlay_values(initial, cumulative_net, margins, prices)
+    return overlay.values, bool(overlay.shortfall_rows)
 
 
 def annualized_returns(

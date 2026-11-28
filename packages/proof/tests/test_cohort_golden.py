@@ -29,8 +29,11 @@ from proof_fixtures import fixture
 
 # Recorded on CPython 3.12 / Linux (CI). Byte-exact only there; see the module docstring.
 BYTE_EXACT_PLATFORM = "Linux"
-BYTE_EXACT_RUN_ID = "bcbe159188c1eb07"
-BYTE_EXACT_DIGEST = "d843de317632632f7bb9370223dbf641dc2d64f4a58405249ee81994426177c0"
+# Re-recorded with the shared shortfall tolerance (refs #273, #297): the daily cash walk
+# no longer grows a sub-tolerance negative balance, so the last bits of this payload moved
+# while the platform-independent NUMERIC_DIGEST below stayed identical.
+BYTE_EXACT_RUN_ID = "83d5b37b63761496"
+BYTE_EXACT_DIGEST = "774d41b3e53730b8221eb48545bfe0b8818944276809d5c840453098635d66a4"
 # Platform-independent: floats rounded to 9 decimals, generated ids replaced.
 NUMERIC_DIGEST = "3d9099e0c7d4b7a35f28b12153085f455be6ecae32b76581e42993ae8dd5ed9c"
 ROUND_DIGITS = 9

@@ -98,6 +98,22 @@ class WebPackageArchitectureTests(unittest.TestCase):
         ):
             store.close()
 
+    def test_malformed_proof_search_history_does_not_block_new_save(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            history = root / "data/analytics/proof-searches.jsonl"
+            history.parent.mkdir(parents=True)
+            history.write_text('not-json\n{}\n{"run_id":"old"}\n', encoding="utf-8")
+            store = web_server.ScreenerStore(ScreenerInputs(root))
+            try:
+                store.save_proof_search({"run_id": "new", "result": "ok"})
+            finally:
+                store.close()
+            records = [
+                json.loads(line) for line in history.read_text(encoding="utf-8").splitlines()[2:]
+            ]
+            self.assertEqual([record["run_id"] for record in records], ["old", "new"])
+
     def test_unsupported_media_type_drains_declared_body(self) -> None:
         handler = SimpleNamespace(
             headers={"Content-Type": "text/plain", "Content-Length": "7"},

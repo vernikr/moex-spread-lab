@@ -60,7 +60,17 @@ class ScreenerStore:
             lines = path.read_text(encoding="utf-8").splitlines()
         except FileNotFoundError:
             return []
-        return [json.loads(line) for line in lines[-20:] if line]
+        rows: list[dict[str, Any]] = []
+        for line in lines[-20:]:
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(record, dict) and isinstance(record.get("run_id"), str):
+                rows.append(record)
+        return rows
 
     def _save(self, path: Path, result: dict[str, Any]) -> None:
         with self.lock:

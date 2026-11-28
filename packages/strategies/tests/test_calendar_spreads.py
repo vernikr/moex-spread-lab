@@ -1,4 +1,5 @@
 import json
+import math
 import unittest
 from datetime import date
 from pathlib import Path
@@ -306,6 +307,69 @@ class ProofPayloadTests(unittest.TestCase):
         self.assertEqual([row["position"] for row in payload["ledger"]], [0, 0, 0])
         self.assertEqual([row["quantity"] for row in payload["ledger"]], [0, 0, 0])
         self.assertEqual(payload["ledger"][-1]["mark_pnl_rub"], 0.0)
+
+    def test_build_windows_resolves_ruonia_causally_and_handles_empty_or_future_rates(self):
+        days = [f"2026-01-{d:02d}" for d in range(1, 28)]
+        histories = {
+            "SRH6": {
+                **{
+                    d: {"TRADEDATE": d, "SETTLEPRICE": 30000.0, "OPEN": 30000.0, "VOLUME": 500}
+                    for d in days
+                },
+                "2026-03-19": {
+                    "TRADEDATE": "2026-03-19",
+                    "SETTLEPRICE": 30000.0,
+                    "OPEN": 30000.0,
+                    "VOLUME": 500,
+                },
+            },
+            "SRM6": {
+                **{
+                    d: {"TRADEDATE": d, "SETTLEPRICE": 30500.0, "OPEN": 30500.0, "VOLUME": 500}
+                    for d in days
+                },
+                "2026-06-18": {
+                    "TRADEDATE": "2026-06-18",
+                    "SETTLEPRICE": 30500.0,
+                    "OPEN": 30500.0,
+                    "VOLUME": 500,
+                },
+            },
+            "SRH6SRM6": {
+                d: {"TRADEDATE": d, "SETTLEPRICE": 500.0, "OPEN": 500.0, "VOLUME": 500}
+                for d in days
+            },
+            "SRU6": {
+                "2026-09-17": {
+                    "TRADEDATE": "2026-09-17",
+                    "SETTLEPRICE": 31000.0,
+                    "OPEN": 31000.0,
+                    "VOLUME": 500,
+                }
+            },
+        }
+        sr_terms = {"mult": 1.0, "tick_size": 1.0, "tick_value": 1.0, "margin_rate": 0.15}
+
+        empty_wins = build_windows(histories, "SR", sr_terms, ([], {}))
+        self.assertTrue(math.isnan(empty_wins[0]["rows"][0]["dev_pp"]))
+
+        future_wins = build_windows(
+            histories, "SR", sr_terms, (["2026-12-31"], {"2026-12-31": 0.99})
+        )
+        self.assertTrue(math.isnan(future_wins[0]["rows"][0]["dev_pp"]))
+
+        causal_wins = build_windows(
+            histories,
+            "SR",
+            sr_terms,
+            (["2025-12-30", "2026-01-01"], {"2025-12-30": 0.15, "2026-01-01": 0.50}),
+        )
+        prior_only = build_windows(
+            histories, "SR", sr_terms, (["2025-12-30"], {"2025-12-30": 0.15})
+        )
+        self.assertAlmostEqual(
+            causal_wins[0]["rows"][0]["dev_pp"], prior_only[0]["rows"][0]["dev_pp"]
+        )
 
     def test_execute_calendar_proof_honors_threshold_pp_and_rejects_bad_params(self):
         days = [f"2026-01-{day:02d}" for day in range(1, 28)]

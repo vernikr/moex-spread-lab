@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import itertools
-from bisect import bisect_right
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -36,6 +35,7 @@ from .contracts import (
     terms,
     zscore_options,
 )
+from .h1_candles import asof_before
 from .loaders import cached_till_date, fetch_inputs, offline_loader
 
 _DAILY_ROW_KEYS = "date spread open_spread near_close far_close dev_pp days_to_near_expiry dividend_in_window margin min_volume mult near_price far_price near_open_price far_open_price spread_price spread_open_price spread_last_trade spread_trades near_volume far_volume"
@@ -51,7 +51,7 @@ def _build_daily_window_row(
     day_sources: tuple[dict[str, Any], dict[str, Any], dict[str, Any]],
     terms: dict[str, Any],
     fx_val: float,
-    win_ctx: tuple[date, float, float, bool],
+    win_ctx: tuple[date, float, float | None, bool],
 ) -> dict[str, Any]:
     c, e, f = day_sources
     r, n, s, t = win_ctx
@@ -139,7 +139,7 @@ def build_windows(
                 (c[d], f[d], h[d]),
                 terms,
                 m.get(d, 1.0),
-                (i, t, p[k[max(0, bisect_right(k, d) - 1)]], r),
+                (i, t, asof_before(k, p, d)[1], r),
             )
             for d in g
         ]

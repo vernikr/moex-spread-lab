@@ -29,16 +29,25 @@ from moex_spread_lab.data.lake.refresh_merge import RefreshTarget
 
 
 def test_candle_interval_labels_match_iss_durations():
-    assert CANDLE_INTERVAL_LABELS == {
-        1: "1m",
-        10: "10m",
-        60: "1h",
-        24: "1d",
-        7: "1w",
-        31: "1mo",
-        4: "1q",
+    durations = block(
+        "interval duration",
+        [[1, 60], [10, 600], [60, 3600], [24, 86400], [7, 604800], [31, 2678400], [4, 8035200]],
+    )
+    labels_by_duration = {
+        60: "1m",
+        600: "10m",
+        3600: "1h",
+        86400: "1d",
+        604800: "1w",
+        2678400: "1mo",
+        8035200: "1q",
     }
-    for interval, label in CANDLE_INTERVAL_LABELS.items():
+    expected = {
+        item["interval"]: labels_by_duration[item["duration"]]
+        for item in rows(durations, "durations")
+    }
+    assert expected == CANDLE_INTERVAL_LABELS
+    for interval, label in expected.items():
         row = normalize_candles(
             candles([[1, 1, 1, 1, 1, 1, "2026-01-01", "2026-03-31"]]),
             secid="TEST",

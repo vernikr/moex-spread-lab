@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import time
@@ -18,6 +19,7 @@ from .iss_http import (
     DEFAULT_BOARD,
     DEFAULT_ISS_BASE_URL,
     IssIntakeError,
+    atomic_cache_write,
     fetch_json_with_raw,
     is_safe_component,
 )
@@ -149,8 +151,13 @@ def _load_or_fetch_page_rows(
     url = _candles_url(
         req.base_url, req.board, req.secid, req.interval, req.from_date, req.till_date, start
     )
-    cache_path = series_cache / f"page-{page:06d}.json" if series_cache else None
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    cache_path = series_cache / f"page-{page:06d}-{digest}.json" if series_cache else None
     page_result = _try_load_cached_page(cache_path, url)
+    if page_result is None and series_cache is not None:
+        page_result = _try_load_cached_page(series_cache / f"page-{page:06d}.json", url)
+        if page_result is not None and cache_path is not None:
+            atomic_cache_write(cache_path, page_result)
     if page_result is None:
         payload, received_at, raw_sha256 = _fetch_network_candle_page(req, url)
         rows = normalize_candles(
@@ -163,11 +170,7 @@ def _load_or_fetch_page_rows(
         )
         page_result = {"url": url, "page": page, "start": start, "rows": rows}
         if cache_path is not None:
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            cache_path.write_text(
-                json.dumps(page_result, ensure_ascii=False, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
+            atomic_cache_write(cache_path, page_result)
     rows = cast(list[dict[str, Any]], page_result["rows"])
     if req.interval == 4:
         return [{**row, "timeframe": CANDLE_INTERVAL_LABELS[4]} for row in rows]

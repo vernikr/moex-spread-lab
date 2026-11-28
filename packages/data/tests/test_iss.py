@@ -6,6 +6,7 @@ import importlib
 import json
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -95,6 +96,73 @@ def test_candle_interval_labels_match_iss_durations():
         )[0]
         assert row["timeframe"] == label
         assert RefreshTarget("TEST", interval).timeframe == label
+
+
+def test_candle_cache_keeps_distinct_date_chunks_and_reuses_them(tmp_path):
+    calls = []
+
+    def opener(request, timeout):
+        calls.append(request.full_url)
+        row = [1, 1, 1, 1, 1, 1, "2026-01-01 01:00:00", "2026-01-01 01:59:59"]
+        return _Response(json.dumps(candles([row])).encode())
+
+    def run(chunk):
+        return fetch_candle_series(
+            secid="X",
+            interval=60,
+            from_date=chunk[0],
+            till_date=chunk[1],
+            opener=opener,
+            delay_seconds=0,
+            cache_dir=tmp_path,
+        )
+
+    chunks = [("2026-01-01", "2026-03-31"), ("2026-04-01", "2026-06-30")]
+    for chunk in chunks:
+        run(chunk)
+    assert len(calls) == 2
+    for chunk in chunks:
+        run(chunk)
+    assert len(calls) == 2
+    assert len(list(tmp_path.rglob("*.json"))) == 2
+
+
+def test_concurrent_same_url_cache_writes_are_atomic(tmp_path, monkeypatch):
+    from moex_spread_lab.data.iss import iss_http
+
+    original_replace = iss_http.os.replace
+    replacement_reads = []
+
+    def replace(src, dst):
+        data = json.loads(Path(src).read_text())
+        replacement_reads.append(data["url"])
+        original_replace(src, dst)
+
+    monkeypatch.setattr(iss_http.os, "replace", replace)
+
+    def opener(request, timeout):
+        row = [1, 1, 1, 1, 1, 1, "2026-01-01 01:00:00", "2026-01-01 01:59:59"]
+        return _Response(json.dumps(candles([row])).encode())
+
+    def run(_):
+        return fetch_candle_series(
+            secid="X",
+            interval=60,
+            from_date="2026-01-01",
+            till_date="2026-03-31",
+            opener=opener,
+            delay_seconds=0,
+            cache_dir=tmp_path,
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        results = list(executor.map(run, range(12)))
+    assert all(r["row_count"] == 1 for r in results)
+    pages = list(tmp_path.rglob("*.json"))
+    assert len(pages) == 1
+    assert replacement_reads
+    assert json.loads(pages[0].read_text())["url"] == replacement_reads[0]
+    assert not list(tmp_path.rglob("*.tmp"))
 
 
 def test_quarterly_cached_page_uses_current_timeframe(tmp_path):

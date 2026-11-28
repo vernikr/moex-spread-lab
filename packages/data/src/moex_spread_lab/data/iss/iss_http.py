@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
+import os
 import re
+import tempfile
 import time
 import urllib.request
 from collections.abc import Callable
@@ -83,6 +85,27 @@ def is_safe_component(value: Any) -> bool:
         and value not in {".", ".."}
         and bool(re.fullmatch(r"[A-Za-z0-9_.-]+", value))
     )
+
+
+def atomic_cache_write(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=path.parent,
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n")
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _url(base_url: str, board: str) -> str:

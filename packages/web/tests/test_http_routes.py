@@ -10,7 +10,9 @@ import threading
 import unittest
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
+from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import ClassVar, cast
 from unittest import mock
 
@@ -95,6 +97,20 @@ class WebPackageArchitectureTests(unittest.TestCase):
             side_effect=AssertionError("ProofService initialized during close"),
         ):
             store.close()
+
+    def test_unsupported_media_type_drains_declared_body(self) -> None:
+        handler = SimpleNamespace(
+            headers={"Content-Type": "text/plain", "Content-Length": "7"},
+            rfile=BytesIO(b"payload"),
+        )
+
+        def drain_body(size: int) -> None:
+            handler.rfile.read(size)
+
+        handler.drain_body = drain_body
+        with self.assertRaises(dispatch._UnsupportedMediaType):
+            dispatch._read_selection(handler, "/api/settings")
+        self.assertEqual(handler.rfile.read(), b"")
 
 
 class WebHttpRoutesTests(unittest.TestCase):

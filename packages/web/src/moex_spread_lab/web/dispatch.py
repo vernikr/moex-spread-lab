@@ -71,6 +71,11 @@ def dispatch_get(handler: Any, store: Any, path: str) -> None:
 
 def _read_selection(handler: Any, path: str) -> Any:
     if handler.headers.get("Content-Type", "").split(";", 1)[0] != "application/json":
+        try:
+            size = int(handler.headers.get("Content-Length", "0"))
+        except ValueError:
+            size = 0
+        handler.drain_body(size)
         raise _UnsupportedMediaType
     size = int(handler.headers.get("Content-Length", "0"))
     limit = (

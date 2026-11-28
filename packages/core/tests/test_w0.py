@@ -96,7 +96,8 @@ class W0Tests(unittest.TestCase):
             path = _write_intake(directory, tick_size=float("nan"))
             with self.assertRaises(W0Error) as ctx:
                 load_contracts(path, "NEAR", "FAR")
-            self.assertIn("must be a finite number", str(ctx.exception))
+            # NaN is now refused at the JSON boundary itself (non-standard token).
+            self.assertIn("non-standard JSON constant", str(ctx.exception))
 
     def test_load_contracts_rejects_null_source_vintage(self):
         for vintage in (None, "", "   ", 42):
@@ -207,6 +208,46 @@ class W0Tests(unittest.TestCase):
             )
             _, digest_after = load_contracts(path, "NEAR", "FAR")
             self.assertEqual(digest_before, digest_after)
+
+    def test_json_readers_reject_non_finite_constants(self):
+        from moex_spread_lab.core.w0 import load_object
+
+        for constant in ("NaN", "Infinity", "-Infinity"):
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "bad.json"
+                path.write_text(f'{{"instruments": [], "x": {constant}}}', encoding="utf-8")
+                with self.assertRaises(W0Error):
+                    _reader = __import__("moex_spread_lab.core.w0", fromlist=["read_hashed_json"])
+                    _reader.read_hashed_json(path, error=W0Error)
+                with self.assertRaises(Exception) as ctx:
+                    load_object(path, label="test", error=W0Error)
+                self.assertIn("non-standard JSON constant", str(ctx.exception))
+
+    def test_json_readers_raise_typed_error_on_deep_nesting(self):
+        from moex_spread_lab.core.w0 import load_object
+
+        deep = "[" * 200_000 + "]" * 200_000
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "deep.json"
+            path.write_text(deep, encoding="utf-8")
+            from moex_spread_lab.core import w0
+
+            with self.assertRaises(W0Error):
+                w0.read_hashed_json(path, error=W0Error)
+            with self.assertRaises(W0Error):
+                load_object(path, label="test", error=W0Error)
+
+    def test_json_readers_accept_utf8_bom(self):
+        from moex_spread_lab.core import w0
+        from moex_spread_lab.core.w0 import load_object
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bom.json"
+            path.write_bytes(b'\xef\xbb\xbf{"a": 1}')
+            loaded = load_object(path, label="test", error=W0Error)
+            self.assertEqual(loaded["a"], 1)
+            hashed, _ = w0.read_hashed_json(path, error=W0Error)
+            self.assertEqual(hashed["a"], 1)
 
     def test_read_hashed_json_mutation_does_not_poison_cache(self):
         from moex_spread_lab.core import w0

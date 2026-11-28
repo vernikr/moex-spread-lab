@@ -37,6 +37,11 @@ class JSONBoundaryError(ValueError):
     """Raised when decoded input is not a JSON object with string keys."""
 
 
+def _reject_constant(value: str) -> Any:
+    """parse_constant hook: NaN/Infinity are not valid JSON and are refused here."""
+    raise ValueError(f"non-standard JSON constant: {value}")
+
+
 def as_str_dict(
     value: object,
     *,
@@ -66,10 +71,12 @@ def load_object(
     source = Path(path)
     context = label or str(source)
     try:
-        decoded: object = json.loads(source.read_text(encoding="utf-8"))
+        decoded: object = json.loads(
+            source.read_text(encoding="utf-8-sig"), parse_constant=_reject_constant
+        )
     except FileNotFoundError:
         raise
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeError, ValueError, RecursionError) as exc:
         raise error(f"cannot read {context} as UTF-8 JSON: {exc}") from exc
     return as_str_dict(decoded, label=context, error=error)
 
@@ -123,8 +130,12 @@ def read_hashed_json(
             return deepcopy(cached_value), cached_digest
     try:
         raw = resolved.read_bytes()
-        value = as_str_dict(json.loads(raw.decode("utf-8")), label=label, error=error)
-    except (OSError, ValueError) as exc:
+        value = as_str_dict(
+            json.loads(raw.decode("utf-8-sig"), parse_constant=_reject_constant),
+            label=label,
+            error=error,
+        )
+    except (OSError, UnicodeError, ValueError, RecursionError) as exc:
         raise error(f"cannot read {label} {path}: {exc}") from exc
     result = (cast(dict[str, Any], value), sha256_bytes(raw))
     _HASHED_JSON_CACHE.put(key, result)

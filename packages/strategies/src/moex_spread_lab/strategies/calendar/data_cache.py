@@ -251,21 +251,22 @@ def _resolve_proof_data_and_window(
     through: str | None,
     cache: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    data = (
-        cache["_loaded_data"]
-        if cache is not None and "_loaded_data" in cache
-        else cal._load_asset(asset)
-    )
-    if cache is not None:
-        cache["_loaded_data"] = data
+    loaded_by_asset = cache.setdefault("_loaded_data", {}) if cache is not None else None
+    if loaded_by_asset is not None and asset in loaded_by_asset:
+        data = loaded_by_asset[asset]
+    else:
+        data = cal._load_asset(asset)
+        if loaded_by_asset is not None:
+            loaded_by_asset[asset] = data
     through_cache = cache.setdefault("through", {}) if cache is not None else None
-    if through_cache is not None and through in through_cache:
-        return data, through_cache[through]
+    win_key = (asset, pair, tf, through)
+    if through_cache is not None and win_key in through_cache:
+        return data, through_cache[win_key]
     window = cal.window(asset, pair, tf)
     if through is not None:
         window = cal._through(window, through)
     if through_cache is not None:
-        through_cache[through] = window
+        through_cache[win_key] = window
     return data, window
 
 

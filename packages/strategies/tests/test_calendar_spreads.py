@@ -1,6 +1,7 @@
 import json
 import unittest
 from datetime import date
+from pathlib import Path
 from typing import ClassVar
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
@@ -9,6 +10,7 @@ from moex_spread_lab.data import universe as data_universe
 from moex_spread_lab.strategies import discover_strategies
 from moex_spread_lab.strategies.calendar import contracts
 from moex_spread_lab.strategies.calendar.calendar_spreads import (
+    CalendarData,
     build_windows,
     contract_chain,
     positive_spread_volume_rows,
@@ -314,6 +316,105 @@ class ProofPayloadTests(unittest.TestCase):
         ):
             with self.subTest(strategy=strategy, bad=bad), self.assertRaises(W0Error):
                 run(strategy, bad)
+
+    def test_shared_proof_cache_isolates_assets_pairs_and_timeframes(self):
+        days1 = [f"2026-01-{day:02d}" for day in range(1, 28)]
+        days2 = [f"2026-04-{day:02d}" for day in range(1, 28)]
+        histories = {
+            "SRH6": {
+                **{day: _row(day, 30000.0) for day in days1},
+                "2026-03-19": _row("2026-03-19", 30000.0),
+            },
+            "SRM6": {
+                **{day: _row(day, 30500.0) for day in days1},
+                **{day: _row(day, 30000.0) for day in days2},
+                "2026-06-18": _row("2026-06-18", 30500.0),
+            },
+            "SRH6SRM6": {day: _row(day, 500.0) for day in days1},
+            "SRU6": {
+                **{day: _row(day, 30000.0) for day in days2},
+                "2026-09-17": _row("2026-09-17", 30000.0),
+            },
+            "SRM6SRU6": {day: _row(day, 0.0) for day in days2},
+            "GZH6": {
+                **{day: _row(day, 15000.0) for day in days1},
+                "2026-03-19": _row("2026-03-19", 15000.0),
+            },
+            "GZM6": {
+                **{day: _row(day, 15000.0) for day in days1},
+                "2026-06-18": _row("2026-06-18", 15000.0),
+            },
+            "GZH6GZM6": {day: _row(day, 0.0) for day in days1},
+        }
+        sr_terms = {**TERMS, "tick_size": 1.0, "tick_value": 1.0, "reference_contract": "SRH6"}
+        gz_terms = {**TERMS, "tick_size": 1.0, "tick_value": 1.0, "reference_contract": "GZH6"}
+        ruonia = (["2025-12-30"], {"2025-12-30": 0.04})
+        sr_wins = build_windows(histories, "SR", sr_terms, ruonia)
+        gz_wins = build_windows(histories, "GZ", gz_terms, ruonia)
+        all_days = sorted([*days1, *days2])
+        benchmark = dict.fromkeys(all_days, 1.5)
+        wmap = {
+            ("SR", sr_wins[0]["pair"], "1d"): sr_wins[0],
+            ("SR", sr_wins[1]["pair"], "1d"): sr_wins[1],
+            ("GZ", gz_wins[0]["pair"], "1d"): gz_wins[0],
+        }
+
+        class FakeCalendarData(CalendarData):
+            def __init__(self):
+                self.cache = Path("/tmp/unused")
+
+            def _load_asset(self, asset: str) -> dict:
+                terms_map = {"SR": sr_terms} if asset == "SR" else {"GZ": gz_terms}
+                return {
+                    "asset": asset,
+                    "terms": terms_map,
+                    "benchmark": benchmark,
+                    "benchmark_dates": all_days,
+                }
+
+            def window(self, asset: str, pair: str, timeframe: str = "1d") -> dict:
+                return wmap[(asset, pair, timeframe)]
+
+        cal = FakeCalendarData()
+        shared: dict = {}
+        first = cal.proof(
+            {
+                "asset": "SR",
+                "pair": sr_wins[0]["pair"],
+                "strategy": "convergence_to_ruonia",
+                "fill": "next_open",
+            },
+            metrics_only=True,
+            _cache=shared,
+        )
+        second = cal.proof(
+            {
+                "asset": "SR",
+                "pair": sr_wins[1]["pair"],
+                "strategy": "convergence_to_ruonia",
+                "fill": "next_open",
+            },
+            metrics_only=True,
+            _cache=shared,
+        )
+        third = cal.proof(
+            {
+                "asset": "GZ",
+                "pair": gz_wins[0]["pair"],
+                "strategy": "convergence_to_ruonia",
+                "fill": "next_open",
+            },
+            metrics_only=True,
+            _cache=shared,
+        )
+        self.assertEqual(first["selection"]["pair"], sr_wins[0]["pair"])
+        self.assertEqual(first["trades"][0]["side"], "short_spread")
+        self.assertEqual(second["selection"]["pair"], sr_wins[1]["pair"])
+        self.assertEqual(second["window"]["from"], "2026-04-01")
+        self.assertEqual(second["trades"], [])
+        self.assertEqual(third["selection"]["asset"], "GZ")
+        self.assertEqual(third["selection"]["pair"], gz_wins[0]["pair"])
+        self.assertEqual(third["trades"][0]["side"], "long_spread")
 
 
 def test_asset_catalog_is_reexported_from_contracts_not_redefined() -> None:

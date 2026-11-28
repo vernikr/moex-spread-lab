@@ -154,15 +154,16 @@ def _validate_plugin_params(
 
 def _prepare_analysis_rows(
     window: dict[str, Any],
-    timeframe: str,
+    scope: tuple[Any, ...],
     fill: str,
     quantity: int,
     through: str | None,
     cache: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    timeframe = scope[2]
     if timeframe == "1h":
         h1_cache = cache.setdefault("h1", {}) if cache is not None else None
-        h1_key = (through, fill, quantity)
+        h1_key = (*scope, through, fill, quantity)
         if h1_cache is not None and h1_key in h1_cache:
             return h1_cache[h1_key]
         res_window, res_rows = _build_h1_eligible_rows(window, fill, quantity)
@@ -171,13 +172,14 @@ def _prepare_analysis_rows(
             h1_cache[h1_key] = (res_window, prepared)
         return res_window, prepared
     elig_cache = cache.setdefault("daily_eligible", {}) if cache is not None else None
-    if elig_cache is not None and through in elig_cache:
-        return window, elig_cache[through]
+    elig_key = (*scope, through)
+    if elig_cache is not None and elig_key in elig_cache:
+        return window, elig_cache[elig_key]
     analysis_rows = _prepare_daily_eligibility(positive_spread_volume_rows(window["rows"]))
     if len(analysis_rows) < 2:
         raise W0Error("fewer than two positive-volume calendar-spread observations")
     if elig_cache is not None:
-        elig_cache[through] = analysis_rows
+        elig_cache[elig_key] = analysis_rows
     return window, analysis_rows
 
 
@@ -229,11 +231,10 @@ def execute_calendar_proof(
         asset, pair, timeframe, strategy, req.get("raw_params", {}), registry
     )
     profile = {**tariff_profile(slippage), "tariff_group": ASSETS[asset]["group"]}
+    scope = (asset, pair, timeframe, window.get("first_date"), window.get("last_date"))
     z_cache = cache.setdefault("z", {}) if cache is not None else None
-    z_cache_key = (through, fill, quantity)
-    window, analysis_rows = _prepare_analysis_rows(
-        window, timeframe, fill, quantity, through, cache
-    )
+    z_cache_key = (*scope, through, fill, quantity)
+    window, analysis_rows = _prepare_analysis_rows(window, scope, fill, quantity, through, cache)
     native_order = bool(window.get("native_spread_order", True))
     snapshot = intent_snapshot(
         window,
@@ -278,7 +279,7 @@ def execute_calendar_proof(
             benchmark_dates=data["benchmark_dates"],
         )
     series_cache = cache.setdefault("series", {}) if (cache is not None and metrics_only) else None
-    series_key = (through, fill, quantity) if timeframe == "1h" else (through,)
+    series_key = (*scope, through, fill, quantity) if timeframe == "1h" else (*scope, through)
     payload = build_proof_payload(
         window,
         account,

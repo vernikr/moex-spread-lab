@@ -214,6 +214,63 @@ def test_offline_history_rejects_missing_and_unknown_vintage_without_network(tmp
     )
     with pytest.raises(iss_http.IssHistoryError, match="missing, expired or unverified"):
         iss_http.fetch_history(*args, **kwargs)
+    document = json.loads(path.read_text())
+    document["cached_at"] = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+    path.write_text(json.dumps(document))
+    with pytest.raises(iss_http.IssHistoryError, match="missing, expired or unverified"):
+        iss_http.fetch_history(*args, **kwargs)
+
+
+@pytest.mark.parametrize("endpoint", ["candles", "history"])
+def test_open_day_request_finishing_after_midnight_is_not_reused(monkeypatch, tmp_path, endpoint):
+    from moex_spread_lab.data.iss import iss_http
+
+    clock = [datetime(2026, 11, 26, 20, 59, 59, tzinfo=UTC)]
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: clock[0])
+    calls = []
+
+    def opener(request, timeout):
+        calls.append(1)
+        clock[0] = datetime(2026, 11, 26, 21, 0, 1, tzinfo=UTC)
+        if endpoint == "candles":
+            payload = candles([[1, 1, 1, 1, 1, 1, "2026-11-26 12:00:00", "2026-11-26 12:59:59"]])
+        else:
+            payload = {"history": {"columns": ["TRADEDATE"], "data": [["2026-11-26"]]}}
+        return _Response(json.dumps(payload).encode())
+
+    def run():
+        args = ("2026-11-26", "2026-11-26")
+        options = {"cache_dir": tmp_path, "delay_seconds": 0, "opener": opener}
+        if endpoint == "candles":
+            return fetch_candle_series(
+                secid="TEST", interval=60, from_date=args[0], till_date=args[1], **options
+            )
+        return iss_http.fetch_history("TEST", *args, **options)
+
+    run()
+    assert run()["page_cache"][0]["source"] == "network"
+    assert len(calls) == 2
+
+
+def test_history_freshness_signature_changes_without_file_edits(tmp_path, monkeypatch):
+    from moex_spread_lab.data.iss import iss_http
+    from moex_spread_lab.data.iss.history_freshness import history_freshness_signature
+
+    now = datetime(2026, 11, 28, 12, tzinfo=UTC)
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: now)
+    path = tmp_path / "page.json"
+    path.write_text(
+        json.dumps(
+            {
+                "url": iss_http.history_url("TEST", "2026-01-01", "2026-01-02", 0),
+                "cached_at": now.isoformat(),
+            }
+        )
+    )
+    first = history_freshness_signature((tmp_path,))
+    assert first == history_freshness_signature((tmp_path,))
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: now + timedelta(days=1))
+    assert first != history_freshness_signature((tmp_path,))
 
 
 def test_cache_expiry_and_capture_date_are_conservative(monkeypatch):

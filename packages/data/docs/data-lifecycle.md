@@ -59,8 +59,12 @@ mirror in lockstep:
   legacy-versus-Parquet verification;
 - ISS candle and history page caches are bypassed for ranges reaching the
   current Moscow date; historical pages expire after 24 hours and require a
-  capture timestamp later than the requested end date. Unknown cache vintage
-  causes a refetch. Intake results list each page's `cache` or `network` source;
+  request-start timestamp on a later Moscow date than the requested end date.
+  Unknown cache vintage causes a refetch. Intake results list each page's
+  `cache` or `network` source. Offline history readers reject missing, expired
+  or unverified pages instead of downloading; a refresh requires online intake.
+  Calendar windows and the proof catalog also invalidate their cached results
+  when underlying history pages expire;
 - fresh ISS bodies are retained under `data-lake/raw/` with
   request/response/receipt-time SHA-256 identity; unpinned entries expire
   after a default 30-day TTL, and `--pin-raw` or `data-pin-raw --entry-id …`

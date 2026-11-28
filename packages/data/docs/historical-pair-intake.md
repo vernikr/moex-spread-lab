@@ -11,7 +11,14 @@ Scope: the registered universe of historical perpetual–quarterly pairs, its lo
 
 ## Local data
 
-- Screened daily candles live under ignored `data/w1/candles-screen`; FORTS EOD history pages are cached under `data/carry-screen-history-cache`.
+- Screened daily candles live under ignored `data/w1/candles-screen`; FORTS EOD history pages are cached under `data/carry-screen-history-cache` (the base CNYRUBF/CRZ6 pair uses `data/carry-history-cache`).
+- History pages with unknown request time, an open Moscow-date range or age of 24 hours are not accepted by offline screens and proofs. Existing legacy pages remain on disk but need online re-intake; a range ending today needs another intake after its Moscow date closes. For a registered pair, from the project root run the following explicitly, with network access and the project's verified TLS configuration:
+
+  ```sh
+  .venv/bin/python -c 'from pathlib import Path; from moex_spread_lab.data import universe; from moex_spread_lab.data.iss.catalog import fetch_history; from moex_spread_lab.strategies.pair_data import history_cache_dir; p="CNYRUBF/CRZ6"; a,b=universe.HISTORY_WINDOWS[p]; [fetch_history(s,a,b,cache_dir=history_cache_dir(Path.cwd(),p)) for s in p.split("/")]'
+  ```
+
+  Substitute another registered pair for `p`; this writes only its page cache. For calendar history use `calendar-study --root . --till-date YYYY-MM-DD --output ...` with the same end date as the existing calendar cache. These are explicit network operations, not automatic UI downloads. Existing materialized candle/benchmark files are not refreshed by either operation.
 - Intake stores the exchange-published `SWAPRATE` exactly as received, including nulls, and never infers funding from candle prices.
 
 ## Historical contract terms

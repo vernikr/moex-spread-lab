@@ -3,6 +3,7 @@
 import os
 import time
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -46,6 +47,35 @@ def _count_build_catalog(monkeypatch: pytest.MonkeyPatch) -> list[tuple]:
 
     monkeypatch.setattr(payload_tools, "_build_catalog", counting)
     return calls
+
+
+def test_catalog_rebuilds_when_history_expires_without_file_edits(tmp_path, monkeypatch):
+    from moex_spread_lab.data.iss import iss_http
+
+    two_calendar_windows(tmp_path)
+    clock = [datetime.now(UTC) + timedelta(seconds=1)]
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: clock[0])
+    service = _fresh_service(tmp_path)
+    calls = _count_build_catalog(monkeypatch)
+    try:
+        before = service.catalog()
+        assert service.catalog() == before
+        assert len(calls) == 1
+        clock[0] += timedelta(hours=25)
+        fresh_service = _fresh_service(tmp_path)
+        try:
+            expired_after_restart = fresh_service.catalog()
+            assert len(calls) == 2
+            expired = service.catalog()
+            assert expired == expired_after_restart
+            assert len(calls) == 2
+            monkeypatch.setenv("MOEX_DERIVED_CACHE", "0")
+            assert expired == service.catalog()
+        finally:
+            fresh_service.close()
+        assert expired != before
+    finally:
+        service.close()
 
 
 def test_cached_response_is_byte_for_byte_identical(tmp_path: Path):

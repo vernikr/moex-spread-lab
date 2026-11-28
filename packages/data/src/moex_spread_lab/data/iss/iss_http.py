@@ -96,6 +96,16 @@ def cache_timestamp() -> str:
     return _cache_now().isoformat()
 
 
+def history_range_closed(till_date: str) -> bool:
+    try:
+        return (
+            date.fromisoformat(till_date)
+            < _cache_now().astimezone(ZoneInfo("Europe/Moscow")).date()
+        )
+    except (TypeError, ValueError):
+        return False
+
+
 def cache_is_fresh(page: dict[str, Any], till_date: str) -> bool:
     try:
         end = date.fromisoformat(till_date)
@@ -295,7 +305,7 @@ class IssHistoryError(W0Error):
     """Raised when an ISS EOD history request or response fails validation."""
 
 
-HISTORY_JSON_CACHE: _HashedJSONCache[tuple[str, int, int], tuple[dict[str, Any], str]] = (
+HISTORY_JSON_CACHE: _HashedJSONCache[tuple[str, int, int, int, int], tuple[dict[str, Any], str]] = (
     _HashedJSONCache(4096)
 )
 
@@ -367,32 +377,34 @@ def history_url(
     return f"https://iss.moex.com/iss/history/engines/futures/markets/forts/securities/{secid}.json?{query}"
 
 
-def _try_load_cached_history_page(
-    cache_path: Path | None, url: str, till_date: str
-) -> tuple[dict[str, Any], str] | None:
-    if cache_path is None:
-        return None
+def read_history_cache_page(cache_path: Path) -> dict[str, Any] | None:
+    """Read a page document, invalidating the memory copy on replacement or edits."""
     try:
         resolved = cache_path.resolve()
         stat = resolved.stat()
-        cache_key = (str(resolved), stat.st_mtime_ns, stat.st_size)
+        cache_key = (str(resolved), stat.st_mtime_ns, stat.st_size, stat.st_ctime_ns, stat.st_ino)
         cached = HISTORY_JSON_CACHE.get(cache_key)
-        if cached is None:
-            cached_raw: object = json.loads(resolved.read_text(encoding="utf-8"))
-            if isinstance(cached_raw, dict):
-                cached = (cast(dict[str, Any], cached_raw), "")
-                HISTORY_JSON_CACHE.put(cache_key, cached)
-        if (
-            cached is not None
-            and cached[0].get("url") == url
-            and cache_is_fresh(cached[0], till_date)
-        ):
-            payload: object = cached[0].get("payload")
-            raw_hash: object = cached[0].get("raw_response_sha256")
-            if isinstance(payload, dict):
-                return cast(dict[str, Any], payload), str(raw_hash or "")
+        if cached is not None:
+            return cached[0]
+        cached_raw: object = json.loads(resolved.read_text(encoding="utf-8"))
+        if isinstance(cached_raw, dict):
+            document = cast(dict[str, Any], cached_raw)
+            HISTORY_JSON_CACHE.put(cache_key, (document, ""))
+            return document
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
+    return None
+
+
+def _try_load_cached_history_page(
+    cache_path: Path | None, url: str, till_date: str
+) -> tuple[dict[str, Any], str] | None:
+    page = read_history_cache_page(cache_path) if cache_path is not None else None
+    if page is not None and page.get("url") == url and cache_is_fresh(page, till_date):
+        payload: object = page.get("payload")
+        raw_hash: object = page.get("raw_response_sha256")
+        if isinstance(payload, dict):
+            return cast(dict[str, Any], payload), str(raw_hash or "")
     return None
 
 

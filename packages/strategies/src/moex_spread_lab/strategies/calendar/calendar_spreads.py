@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import os
-import time
 from pathlib import Path
 from typing import Any
 
 from moex_spread_lab.core.settings import INITIAL_CAPITAL
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data import MarketDataStore
+from moex_spread_lab.data.iss.history_freshness import history_freshness_signature
+from moex_spread_lab.data.iss.iss_http import history_range_closed
 
 from ..calendar_eval import FILLS, account_trades, evaluate_variants, read_benchmark
 from .data_cache import (
@@ -88,6 +88,10 @@ def run_calendar_study(
     )
 
 
+def _reusable_history_snapshot(data: dict[str, Any]) -> bool:
+    return not data["histories"] or history_range_closed(data["till"])
+
+
 class CalendarData:
     """Offline view of cached daily and hourly calendar-spread inputs.
 
@@ -114,25 +118,12 @@ class CalendarData:
         self._shared_meta_sig: tuple[Any, ...] | None = None
         self._eod_fetched_once: bool = False
         self._asset_fetched_once: set[str] = set()
-        self._last_eod_sig_time: float = 0.0
-        self._last_eod_dir_sig: tuple[int, int] | None = None
 
     def _eod_signature(self) -> tuple[Any, ...]:
-        if (
-            "PYTEST_CURRENT_TEST" not in os.environ
-            and self._loaded_sig is not None
-            and time.monotonic() - self._last_eod_sig_time < 0.25
-        ):
-            try:
-                dst = self.cache.stat()
-                if (dst.st_mtime_ns, dst.st_size) == self._last_eod_dir_sig:
-                    return self._loaded_sig
-            except OSError:
-                pass
-        files, self._last_eod_dir_sig = scan_cache_json_sigs(self.cache)
+        files, _ = scan_cache_json_sigs(self.cache)
         extras = stat_extras(self.root)
-        self._last_eod_sig_time = time.monotonic()
-        return (tuple(files), tuple(extras))
+        freshness = history_freshness_signature((self.cache,))
+        return (tuple(files), tuple(extras), freshness)
 
     def _shared_metadata(self) -> dict[str, Any]:
         dir_sig = None
@@ -151,11 +142,19 @@ class CalendarData:
     def _load_asset(self, asset: str) -> dict[str, Any]:
         if asset not in ASSETS:
             return self._load()
-        if self._loaded is not None and self._loaded_sig == self._eod_signature():
+        if (
+            self._loaded is not None
+            and _reusable_history_snapshot(self._loaded)
+            and self._loaded_sig == self._eod_signature()
+        ):
             return self._loaded
         meta = self._shared_metadata()
         sig = asset_eod_signature(self.cache, asset, meta["till"], meta["extras_sig"])
-        if asset in self._loaded_assets and self._loaded_assets_sig.get(asset) == sig:
+        if (
+            asset in self._loaded_assets
+            and _reusable_history_snapshot(self._loaded_assets[asset])
+            and self._loaded_assets_sig.get(asset) == sig
+        ):
             return self._loaded_assets[asset]
         offline = self.offline or is_offline(
             asset in self._asset_fetched_once, self._eod_fetched_once
@@ -178,7 +177,11 @@ class CalendarData:
 
     def _load(self) -> dict[str, Any]:
         sig = self._eod_signature()
-        if self._loaded is not None and self._loaded_sig == sig:
+        if (
+            self._loaded is not None
+            and _reusable_history_snapshot(self._loaded)
+            and self._loaded_sig == sig
+        ):
             return self._loaded
         meta = self._shared_metadata()
         offline = self.offline or is_offline(self._eod_fetched_once)

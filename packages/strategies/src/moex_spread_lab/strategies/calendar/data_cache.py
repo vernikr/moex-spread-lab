@@ -11,6 +11,8 @@ from typing import Any
 from moex_spread_lab.core.contracts import plugin_proof_adapter
 from moex_spread_lab.core.settings import MIN_DAILY_VOLUME, EvaluationSplit
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.data.iss.history_freshness import history_page_is_fresh
+from moex_spread_lab.data.iss.iss_http import HISTORY_PAGE_SIZE
 
 from ..base import calendar_proof_plugin_ids, discover_strategies
 from .contracts import (
@@ -48,8 +50,8 @@ def stat_extras(root: Path) -> list[tuple[str, int, int] | None]:
 
 def scan_cache_json_sigs(
     cache_dir: Path,
-) -> tuple[list[tuple[str, int, int]], tuple[int, int] | None]:
-    files: list[tuple[str, int, int]] = []
+) -> tuple[list[tuple[str, int, int, int, int]], tuple[int, int] | None]:
+    files: list[tuple[str, int, int, int, int]] = []
     dir_sig: tuple[int, int] | None = None
     if not cache_dir.is_dir():
         return files, dir_sig
@@ -62,7 +64,7 @@ def scan_cache_json_sigs(
         if entry.name.endswith(".json"):
             try:
                 st = entry.stat()
-                files.append((entry.name, st.st_mtime_ns, st.st_size))
+                files.append((entry.name, st.st_mtime_ns, st.st_size, st.st_ctime_ns, st.st_ino))
             except OSError:
                 pass
     files.sort()
@@ -81,18 +83,27 @@ def asset_eod_signature(
         chain = contract_chain(a)
         secids.extend(chain)
         secids.extend(spread_id(n, f) for n, f in itertools.pairwise(chain))
-    file_sigs: list[tuple[str, int | None, int | None]] = []
+    file_sigs: list[tuple[str, int | None, int | None, int | None, int | None, bool]] = []
     for secid in secids:
         idx = 0
         while True:
             p = cache_dir / f"{secid}-{HISTORY_FROM}-{till}-{idx}.json"
             try:
                 st = p.stat()
-                file_sigs.append((p.name, st.st_mtime_ns, st.st_size))
-                idx += 1
+                file_sigs.append(
+                    (
+                        p.name,
+                        st.st_mtime_ns,
+                        st.st_size,
+                        st.st_ctime_ns,
+                        st.st_ino,
+                        history_page_is_fresh(p, till),
+                    )
+                )
+                idx += HISTORY_PAGE_SIZE
             except OSError:
                 if idx == 0:
-                    file_sigs.append((p.name, None, None))
+                    file_sigs.append((p.name, None, None, None, None, False))
                 break
     return (extras_sig, till, tuple(file_sigs))
 

@@ -7,8 +7,9 @@ history-cache primitives they reuse.
 
 import json
 import math
+import os
 import unittest
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -108,6 +109,78 @@ def _build_root(root: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def test_calendar_asset_signature_checks_later_pages(tmp_path, monkeypatch):
+    from moex_spread_lab.data.iss import iss_http
+    from moex_spread_lab.strategies.calendar.data_cache import asset_eod_signature
+    from moex_spread_lab.strategies.calendar.loaders import HISTORY_FROM
+
+    now = datetime.now(UTC) + timedelta(seconds=1)
+    clock = [now]
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: clock[0])
+    _build_root(tmp_path)
+    directory = tmp_path / "data/spread-history-cache"
+    first = next(directory.glob("SRH3-*-0.json"))
+    second = directory / f"SRH3-{HISTORY_FROM}-{TILL}-100.json"
+    page = json.loads(first.read_text())
+    page["cached_at"] = (now - timedelta(hours=23)).isoformat()
+    second.write_text(json.dumps(page))
+    before = asset_eod_signature(directory, "SR", TILL, ())
+    clock[0] += timedelta(hours=2)
+    after = asset_eod_signature(directory, "SR", TILL, ())
+    assert before != after
+
+
+def test_calendar_asset_signature_detects_atomic_same_size_same_time_replacement(tmp_path):
+    from moex_spread_lab.strategies.calendar.data_cache import asset_eod_signature
+
+    _build_root(tmp_path)
+    directory = tmp_path / "data/spread-history-cache"
+    first = next(directory.glob("SRH3-*-0.json"))
+    before = asset_eod_signature(directory, "SR", TILL, ())
+    stat = first.stat()
+    replacement = directory / "replacement.tmp"
+    replacement.write_bytes(first.read_bytes())
+    os.utime(replacement, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    replacement.replace(first)
+    assert asset_eod_signature(directory, "SR", TILL, ()) != before
+
+
+def test_calendar_does_not_reuse_open_day_network_snapshot(tmp_path, monkeypatch):
+    from moex_spread_lab.data.iss import iss_http
+    from moex_spread_lab.strategies.calendar.data_cache import asset_eod_signature
+
+    _build_root(tmp_path)
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: datetime(2026, 11, 28, 12, tzinfo=UTC))
+    data = CalendarData(tmp_path, offline=True)
+    old = {"histories": {"SRH3": {}}, "till": "2026-11-28"}
+    data._loaded = old
+    data._loaded_sig = data._eod_signature()
+    assert data._load() is not old
+    data._loaded = None
+    meta = data._shared_metadata()
+    data._loaded_assets["SR"] = old
+    data._loaded_assets_sig["SR"] = asset_eod_signature(
+        data.cache, "SR", meta["till"], meta["extras_sig"]
+    )
+    assert data._load_asset("SR") is not old
+
+
+def test_calendar_memory_cache_expires_without_file_edits(tmp_path, monkeypatch):
+    from moex_spread_lab.data.iss import iss_http
+
+    _build_root(tmp_path)
+    now = datetime.now(UTC) + timedelta(seconds=1)
+    clock = [now]
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: clock[0])
+    by_asset = CalendarData(tmp_path, offline=True)
+    whole = CalendarData(tmp_path, offline=True)
+    assert by_asset._load_asset("SR")["windows"].get("SR")
+    assert whole._load()["windows"].get("SR")
+    clock[0] += timedelta(hours=25)
+    assert not by_asset._load_asset("SR")["windows"].get("SR")
+    assert not whole._load()["windows"].get("SR")
 
 
 def _zscore_request(quantity: int = 2, window: int = 20, timeframe: str | None = None) -> dict:

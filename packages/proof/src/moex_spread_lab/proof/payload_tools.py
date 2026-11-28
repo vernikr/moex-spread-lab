@@ -36,6 +36,7 @@ from moex_spread_lab.core.universe import (
     PAIR_UNIVERSE,
 )
 from moex_spread_lab.core.w0 import W0Error, canonical_bytes, read_hashed_json
+from moex_spread_lab.data.iss.history_freshness import history_freshness_signature
 
 PROOF_SCHEMA = "execution-proof.v1"
 FORCED_EXIT_REASONS = frozenset(
@@ -449,9 +450,18 @@ def catalog_payload(service: CatalogService, settings: ResearchSettings) -> dict
     of every contributing file (see ``core.derived_cache``); the cache is
     byte-for-byte equivalent to a fresh computation.
     """
-    parts = (settings.timeframe, str(settings.initial_capital_rub))
     key = None
-    if derived_cache_enabled():
+    if derived_cache_enabled() and getattr(service.calendar_data, "offline", True):
+        cache_dirs = tuple(
+            service.root / "data" / name
+            for name in (
+                "spread-history-cache",
+                "carry-history-cache",
+                "carry-screen-history-cache",
+            )
+        )
+        freshness = history_freshness_signature(cache_dirs)
+        parts = (settings.timeframe, str(settings.initial_capital_rub), freshness)
         key = fingerprint(service.root, CATALOG_CACHE_NAMESPACE, parts)
         cached = load_bytes(service.root, key)
         if cached is not None:
@@ -459,8 +469,9 @@ def catalog_payload(service: CatalogService, settings: ResearchSettings) -> dict
                 hit = json.loads(cached)
             except ValueError:
                 hit = None
-            if isinstance(hit, dict):
+            if isinstance(hit, dict) and freshness == history_freshness_signature(cache_dirs):
                 return cast(dict[str, Any], hit)
+            key = None
     payload = _build_catalog(service, settings)
     # Normalize through canonical JSON once, so the in-memory payload, the bytes
     # served over HTTP and the bytes stored in the cache are identical objects

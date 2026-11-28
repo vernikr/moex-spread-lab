@@ -34,7 +34,7 @@ PAIR = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_rev
 CALENDAR = {"universe": "calendar_native", "asset": "SR", "pair": "SRH3/SRM3"}
 
 
-def _funding_proof(days, ledger, *, trades=True, sizing=None):
+def _funding_proof(days, ledger, *, trades: bool | list[dict[str, object]] = True, sizing=None):
     """Stub ``funding_only`` proof dict shared by the ``_measure`` unit tests."""
     if trades is True:
         trades = [
@@ -103,6 +103,13 @@ def test_global_seed_makes_a_run_reproducible_and_zero_draws_a_new_one(pair_serv
         assert run["seed"] == 0
         assert run["seed_used"] > 0
     assert len({run["seed_used"] for run in drawn}) > 1
+    # The reported seed_used is the base seed that drove the sampler, so
+    # pinning it replays the run candidate by candidate (issue #290).
+    save_settings(proof.root, {"random_seed": drawn[0]["seed_used"]})
+    replay = research_run(proof, req, optimize=True)
+    assert replay["seed_used"] == drawn[0]["seed_used"]
+    assert replay["candidates"] == drawn[0]["candidates"]
+    assert replay["selected_parameters"] == drawn[0]["selected_parameters"]
 
 
 def test_pair_replay_reproducibility_and_holdout_is_not_a_selection_input(pair_service):

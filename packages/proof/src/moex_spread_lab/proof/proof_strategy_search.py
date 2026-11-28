@@ -279,6 +279,7 @@ def _final_result(run: Run, winner: Winner, policy: Obj, settings: ResearchSetti
         count,
         attempts,
         run.check_cancelled,
+        base_seed=run.base_seed,
         on_progress=run.on_progress,
     )
     result.update(

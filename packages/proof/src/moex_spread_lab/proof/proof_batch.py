@@ -45,7 +45,7 @@ _ValidSpec = tuple[int, _Obj, _Obj]
 
 _CALENDAR_ATTR = "_calendar"
 _PREPARE_OPTS = frozenset({"calendar", "registry"})
-_RESULT_OPTS = frozenset({"on_progress"})
+_RESULT_OPTS = frozenset({"base_seed", "on_progress"})
 
 
 class _ServiceLike(Protocol):
@@ -290,19 +290,21 @@ def batch_search(
         return group
     try:
         axes, seed, members, land = group.axes, group.seed, group.members, group.land
+        # The base seed is drawn once per run, so seed 0 makes every run
+        # different while one run stays internally consistent; the drawn value
+        # is both used by the sampler and reported as seed_used.
+        base_seed = resolve_seed(settings.random_seed)
         best, trials, attempts = _tune(
             land,
             seed,
             axes,
             min(len(case.split.training) for _, case in members),
-            # The base seed is drawn once per run, so seed 0 makes every run
-            # different while one run stays internally consistent.
             TuningOptions(
                 TRIALS,
                 _step_progress(
                     on_progress, "search", 12.0, 76.0, "Optuna: испытание", default_total=TRIALS
                 ),
-                resolve_seed(settings.random_seed),
+                base_seed,
                 "cohort",
             ),
         )
@@ -314,6 +316,7 @@ def batch_search(
             trials,
             attempts,
             check_cancelled,
+            base_seed=base_seed,
             on_progress=on_progress,
         )
     finally:
@@ -343,6 +346,7 @@ def _cohort_result(
             attempts,
             check_cancelled,
             on_progress,
+            cast(int, options["base_seed"]),
         )
     )
 

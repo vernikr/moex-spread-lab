@@ -13,7 +13,7 @@ from moex_spread_lab.core.w0 import run_id
 
 from .landscape import Axis, Landscape
 from .landscape import lamps as _lamps
-from .proof_kernel import StudyWindow, resolve_seed
+from .proof_kernel import StudyWindow
 
 _Obj = dict[str, Any]
 _Metrics = dict[str, Any]
@@ -34,6 +34,7 @@ class CohortReport:
     attempts: list[dict[str, Any]]
     check_cancelled: Callable[[], None]
     on_progress: Callable[[dict[str, Any]], None] | None
+    base_seed: int
 
 
 def _progress_event(stage: str, done: int, total: int, percent: float, label: str) -> _Obj:
@@ -140,7 +141,7 @@ def build_cohort_result(report: CohortReport) -> _Obj:
         "method": "Optuna TPESampler",
         "library_version": optuna.__version__,
         "seed": settings.random_seed,
-        "seed_used": resolve_seed(settings.random_seed),
+        "seed_used": report.base_seed,
         "trial_count": trials,
         "candidates": records,
         "selection_basis": "training",

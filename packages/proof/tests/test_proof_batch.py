@@ -441,9 +441,11 @@ def test_report_keeps_run_id_progress_and_single_window_details():
         1,
         [point],
         lambda: None,
+        base_seed=41,
         on_progress=events.append,
     )
     assert result["selection"] == {"strategy": "x"}
+    assert result["seed_used"] == 41
     assert result["group"]["result_mean_pp"] == 3.0
     assert result["input_run_id"] == "input" and result["result_run_id"] == "output"
     assert result["plateau"] == {"green": 70}

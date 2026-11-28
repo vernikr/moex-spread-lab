@@ -203,6 +203,21 @@ def test_strategy_search_records_every_family_and_returns_run_id_only_for_winner
     }
 
 
+def test_reported_seed_used_replays_a_strategy_search_run(service):
+    # The final report must carry run.base_seed, not a fresh draw, so pinning
+    # seed_used replays the whole family search (issue #290).
+    save_settings(service.root, {"random_seed": 0})
+    first = search(service)
+    assert first["seed"] == 0
+    assert first["seed_used"] > 0
+    save_settings(service.root, {"random_seed": first["seed_used"]})
+    replay = search(service)
+    assert replay["seed_used"] == first["seed_used"]
+    assert replay["selected_strategy"] == first["selected_strategy"]
+    assert replay["selected_parameters"] == first["selected_parameters"]
+    assert replay["candidates"] == first["candidates"]
+
+
 def test_entered_trade_can_later_have_an_unfundable_mark_never_a_zero_rate():
     proof, marks, contracts = unit_proof(near=(50000, 48000, 48000, 48000), entries=((0, 3),))
     proof = size_proof(proof, marks, ResearchSettings(), contracts)

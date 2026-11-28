@@ -63,6 +63,14 @@ class W0Tests(unittest.TestCase):
                 load_contracts(path, "NEAR", "FAR")
             self.assertIn("must be a finite number", str(ctx.exception))
 
+    def test_load_contracts_rejects_fractional_lot_size(self):
+        for lot_size in (0.5, 1.9):
+            with tempfile.TemporaryDirectory() as directory:
+                path = _write_intake(directory, lot_size=lot_size)
+                with self.assertRaises(W0Error) as ctx:
+                    load_contracts(path, "NEAR", "FAR")
+                self.assertIn("whole number", str(ctx.exception))
+
     def test_load_contracts_rejects_nan_tick_size(self):
         with tempfile.TemporaryDirectory() as directory:
             path = _write_intake(directory, tick_size=float("nan"))

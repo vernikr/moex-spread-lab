@@ -185,19 +185,20 @@ def load_contracts(
         ):
             if field not in instrument:
                 raise error(f"contract {secid} is missing {field}")
+        lot_size = _validate_contract_number(
+            instrument["lot_size"],
+            f"{secid}.lot_size",
+            error=error,
+            positive=True,
+        )
+        if not lot_size.is_integer() or lot_size < 1:
+            raise error(f"{secid}.lot_size must be a whole number greater than or equal to 1")
         selected[secid] = {
             "secid": secid,
             "stable_id": instrument.get("stable_id"),
             "board": instrument.get("board"),
             "expiry": instrument.get("expiry"),
-            "lot_size": int(
-                _validate_contract_number(
-                    instrument["lot_size"],
-                    f"{secid}.lot_size",
-                    error=error,
-                    positive=True,
-                )
-            ),
+            "lot_size": int(lot_size),
             "tick_size": _validate_contract_number(
                 instrument["tick_size"],
                 f"{secid}.tick_size",

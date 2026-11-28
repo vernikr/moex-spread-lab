@@ -168,7 +168,7 @@ function _computeSpreadValues(S, mode) {
       const k = pts.length;
       if (k < 3) { out[t] = cur - mean(pts.map(q => q[1])); continue; }
       const f = olsFit(pts);
-      out[t] = cur - (f.a + f.b * (k - 1));
+      out[t] = cur - (f.a + f.b * (t - from));
       continue;
     }
     if (mode === 'ou60') {

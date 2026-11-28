@@ -2,12 +2,15 @@
 content-hash primitives and request-local cache telemetry.
 
 The fingerprint covers ``data/`` (excluding the mutable ``data/analytics`` state),
-``data-lake/`` and every packaged source tree (``src/``, ``packages/*/src/``). Files
-up to 2 MiB are keyed by a SHA-256 of their contents, so any in-place edit
-invalidates the entry; larger files are keyed by ``(relpath, mtime_ns, ctime_ns,
-size)``. Entries live under ``data/analytics/derived-cache/`` (gitignored runtime
-state). A stale entry is never served: the key is the freshness proof. Set
-``MOEX_DERIVED_CACHE=0`` to bypass the cache entirely.
+``data-lake/`` and every packaged source tree (``src/``, ``packages/*/src/``).
+Each entry records ``(relpath, mtime_ns, ctime_ns, size)``; files up to 2 MiB also
+carry a SHA-256 of their contents, so any in-place edit invalidates them. Larger
+files rely on the stat tuple alone, and dotfiles are excluded from the walk.
+Entries live under ``data/analytics/derived-cache/`` (gitignored runtime state).
+A stale entry is never served: the key is the freshness proof. Set
+``MOEX_DERIVED_CACHE=0`` to bypass the cache entirely (both reads and writes).
+The store prunes old entries beyond ``MOEX_DERIVED_CACHE_MAX_ENTRIES``
+(default 64) by mtime.
 
 ``canonical_bytes`` / ``sha256_bytes`` / ``sha256_file`` are the canonical
 serialization and digest helpers every artifact hash is built from; ``w0``
@@ -20,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 import threading
 import time
@@ -203,6 +207,8 @@ def contributing_files(root: Path) -> list[list[Any]]:
             current = Path(dirpath)
             _prune_walked_dirs(base, current, dirnames, seen_dirs)
             for name in filenames:
+                if name.startswith("."):
+                    continue
                 entry = _entry(root, current / name)
                 if entry is not None:
                     entries.append(entry)
@@ -225,9 +231,34 @@ def cache_dir(root: Path) -> Path:
     return root.resolve() / "data" / "analytics" / "derived-cache"
 
 
+_KEY_RE = re.compile(r"[0-9a-f]{64}")
+_MAX_ENTRIES = max(1, int(os.environ.get("MOEX_DERIVED_CACHE_MAX_ENTRIES", "64")))
+
+
+def _validated_key(key: str) -> str:
+    if not _KEY_RE.fullmatch(key):
+        raise ValueError("derived-cache key must be 64 lowercase hex characters (sha256)")
+    return key
+
+
+def _prune_old_entries(cache: Path) -> None:
+    # A fingerprint-keyed store would otherwise grow one entry per data edit, forever.
+    try:
+        entries = [p for p in cache.glob("*.json") if p.is_file()]
+        if len(entries) <= _MAX_ENTRIES:
+            return
+        entries.sort(key=lambda p: p.stat().st_mtime_ns)
+        for stale in entries[: len(entries) - _MAX_ENTRIES]:
+            with suppress(OSError):
+                stale.unlink()
+    except OSError:
+        return
+
+
 def load_bytes(root: Path, key: str) -> bytes | None:
     if not derived_cache_enabled():
         return None
+    _validated_key(key)
     path = cache_dir(root) / f"{key}.json"
     try:
         data = path.read_bytes()
@@ -235,13 +266,19 @@ def load_bytes(root: Path, key: str) -> bytes | None:
         return None
     # A corrupt entry is a miss, never an error and never a stale hit.
     try:
-        json.loads(data)
+        decoded = json.loads(data)
     except ValueError:
+        return None
+    # The cache contract holds JSON objects only (matching the callers' expectations).
+    if not isinstance(decoded, dict):
         return None
     return data
 
 
-def store_bytes(root: Path, key: str, payload: bytes) -> Path:
+def store_bytes(root: Path, key: str, payload: bytes) -> Path | None:
+    if not derived_cache_enabled():
+        return None
+    _validated_key(key)
     cache = cache_dir(root)
     cache.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=".tmp-", dir=str(cache))
@@ -255,4 +292,5 @@ def store_bytes(root: Path, key: str, payload: bytes) -> Path:
         with suppress(OSError):
             os.unlink(tmp)
         raise
+    _prune_old_entries(cache)
     return cache / f"{key}.json"

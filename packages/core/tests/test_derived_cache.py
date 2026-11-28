@@ -121,10 +121,55 @@ def test_warm_fingerprint_reuses_memoized_digests(tmp_path, monkeypatch):
 def test_store_load_roundtrip_is_byte_for_byte(tmp_path):
     root = _root(tmp_path)
     payload = b'{"assets":[{"asset":"SR"}],"timeframe":"1d"}'
-    path = derived_cache.store_bytes(root, "k" * 64, payload)
+    path = derived_cache.store_bytes(root, "a" * 64, payload)
     assert path.read_bytes() == payload
-    assert derived_cache.load_bytes(root, "k" * 64) == payload
+    assert derived_cache.load_bytes(root, "a" * 64) == payload
     assert derived_cache.load_bytes(root, "0" * 64) is None
+
+
+def test_store_bytes_requires_enabled_flag_and_valid_key(tmp_path, monkeypatch):
+    root = _root(tmp_path)
+    monkeypatch.setenv("MOEX_DERIVED_CACHE", "0")
+    assert derived_cache.store_bytes(root, "b" * 64, b"{}") is None
+    monkeypatch.setenv("MOEX_DERIVED_CACHE", "1")
+    with pytest.raises(ValueError, match="64 lowercase hex"):
+        derived_cache.store_bytes(root, "../escaped", b"{}")
+    with pytest.raises(ValueError, match="64 lowercase hex"):
+        derived_cache.load_bytes(root, "../escaped")
+    path = derived_cache.store_bytes(root, "b" * 64, b"{}")
+    assert path is not None and path.is_file()
+
+
+def test_store_prunes_oldest_entries_beyond_cap(tmp_path, monkeypatch):
+    root = _root(tmp_path)
+    monkeypatch.setenv("MOEX_DERIVED_CACHE_MAX_ENTRIES", "3")
+    monkeypatch.setattr(derived_cache, "_MAX_ENTRIES", 3)
+    cache = derived_cache.cache_dir(root)
+    cache.mkdir(parents=True)
+    now = 1_000_000_000_000
+    for index in range(5):
+        entry = cache / f"{index:064x}.json"
+        entry.write_text(f'{{"i": {index}}}', encoding="utf-8")
+        os.utime(entry, ns=(now + index, now + index))
+    derived_cache.store_bytes(root, "f" * 64, b'{"new": true}')
+    remaining = sorted(p.stem for p in cache.glob("*.json"))
+    assert len(remaining) == 3
+    assert f"{0:064x}" not in remaining and f"{1:064x}" not in remaining
+
+
+def test_load_rejects_non_dict_json_payload(tmp_path):
+    root = _root(tmp_path)
+    cache = derived_cache.cache_dir(root)
+    cache.mkdir(parents=True)
+    (cache / ("c" * 64 + ".json")).write_bytes(b"[1, 2, 3]")
+    assert derived_cache.load_bytes(root, "c" * 64) is None
+
+
+def test_fingerprint_skips_dotfiles(tmp_path):
+    root = _root(tmp_path)
+    baseline = derived_cache.fingerprint(root, "ns")
+    (root / "data" / ".DS_Store").write_bytes(b"junk")
+    assert derived_cache.fingerprint(root, "ns") == baseline
 
 
 def test_corrupt_entry_is_a_miss_not_an_error(tmp_path):
@@ -138,8 +183,8 @@ def test_corrupt_entry_is_a_miss_not_an_error(tmp_path):
 def test_disabled_cache_bypasses_reads(tmp_path, monkeypatch):
     root = _root(tmp_path)
     monkeypatch.setenv("MOEX_DERIVED_CACHE", "0")
-    derived_cache.store_bytes(root, "k" * 64, b"{}")
-    assert derived_cache.load_bytes(root, "k" * 64) is None
+    derived_cache.store_bytes(root, "a" * 64, b"{}")
+    assert derived_cache.load_bytes(root, "a" * 64) is None
 
 
 def test_json_cache_hits_misses_and_context_cleanup():

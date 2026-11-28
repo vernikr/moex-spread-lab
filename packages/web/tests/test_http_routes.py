@@ -388,7 +388,7 @@ class WebHttpRoutesTests(unittest.TestCase):
         printed: list[str] = []
 
         class StopServer(ThreadingHTTPServer):
-            def serve_forever(self, poll_interval: float = 0.5) -> None:
+            def serve_forever(self) -> None:
                 raise KeyboardInterrupt
 
         with (

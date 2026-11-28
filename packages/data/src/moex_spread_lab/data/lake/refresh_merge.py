@@ -17,6 +17,7 @@ from .bar_types import DataLakeError
 from .parquet_store import ParquetBarStore
 
 REFRESH_SCHEMA = "market-data-refresh.v1"
+INTRADAY_INTERVALS = frozenset({1, 10, 60})
 
 
 @dataclass(frozen=True)
@@ -197,7 +198,13 @@ def plan_single_target(
     legacy_path = _target_path(cfg.output_dir, target)
     payload = _read_legacy_payload(legacy_path, target)
     watermark = _resolve_target_watermark(store, legacy_path, payload)
-    if not cfg.full_refresh and watermark is not None and watermark >= cfg.until:
+    same_intraday_day = watermark == cfg.until and target.interval in INTRADAY_INTERVALS
+    if (
+        not cfg.full_refresh
+        and watermark is not None
+        and watermark >= cfg.until
+        and not same_intraday_day
+    ):
         return None, {
             "dataset_id": target.id,
             "status": "up_to_date",

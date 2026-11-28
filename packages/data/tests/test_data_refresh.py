@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from moex_spread_lab.data.iss.iss_candles import fetch_candle_series
 from moex_spread_lab.data.lake.data_refresh import (
     DataRefreshError,
     RefreshTarget,
@@ -91,6 +92,126 @@ def _payload(rows: list[dict]) -> dict:
         "price_interpretation": "candle_price_proxy_for_medium_term_analysis",
         "rows": rows,
     }
+
+
+@pytest.mark.parametrize("interval", [1, 10, 60])
+def test_intraday_same_day_refresh_fetches_and_merges_later_candles(tmp_path, interval):
+    calls = []
+
+    def fetcher(**kwargs):
+        calls.append(kwargs)
+        rows = []
+        for hour in (10,) if len(calls) == 1 else (10, 18):
+            row = _row(1, 10 + hour, "a" * 64)
+            row["begin"] = f"2026-01-01 {hour:02d}:00:00"
+            row["end"] = f"2026-01-01 {hour:02d}:59:59"
+            rows.append(row)
+        result = _payload(rows)
+        result.update(secid=kwargs["secid"], interval=interval)
+        return result
+
+    target = RefreshTarget("ABC", interval)
+    first = refresh_candle_datasets(
+        root=tmp_path,
+        targets=[target],
+        from_date="2026-01-01",
+        till_date="2026-01-01",
+        fetcher=fetcher,
+    )
+    second = refresh_candle_datasets(
+        root=tmp_path, targets=[target], till_date="2026-01-01", fetcher=fetcher
+    )
+    assert first["datasets"][0]["row_count"] == 1
+    assert second["status"] == "refreshed"
+    assert second["datasets"][0]["row_count"] == 2
+    assert len(calls) == 2
+    assert calls[1]["from_date"] == "2026-01-01"
+    assert ParquetBarStore(tmp_path).verify_all()["status"] == "verified"
+
+
+def test_intraday_watermark_after_requested_date_still_skips(tmp_path):
+    def fetcher(**kwargs):
+        result = _payload([_row(2, 12, "a" * 64)])
+        result.update(secid=kwargs["secid"], interval=10)
+        return result
+
+    target = RefreshTarget("ABC", 10)
+    refresh_candle_datasets(
+        root=tmp_path,
+        targets=[target],
+        from_date="2026-01-01",
+        till_date="2026-01-02",
+        fetcher=fetcher,
+    )
+    result = refresh_candle_datasets(
+        root=tmp_path,
+        targets=[target],
+        till_date="2026-01-01",
+        fetcher=lambda **kw: pytest.fail("unexpected fetch"),
+    )
+    assert result["status"] == "up_to_date"
+
+
+def test_same_day_intraday_refresh_bypasses_stale_page_cache(tmp_path):
+    calls = []
+
+    class Response:
+        status = 200
+
+        def __init__(self):
+            self.headers = {"Content-Type": "application/json"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            hours = (10,) if len(calls) == 1 else (10, 18)
+            data = [
+                [1, 1, 1, 1, 1, 1, f"2026-01-01 {h}:00:00", f"2026-01-01 {h}:59:59"] for h in hours
+            ]
+            return json.dumps(
+                {
+                    "candles": {
+                        "columns": [
+                            "open",
+                            "close",
+                            "high",
+                            "low",
+                            "value",
+                            "volume",
+                            "begin",
+                            "end",
+                        ],
+                        "data": data,
+                    }
+                }
+            ).encode()
+
+    def opener(request, timeout):
+        calls.append(request.full_url)
+        return Response()
+
+    def fetcher(**kwargs):
+        return fetch_candle_series(**kwargs, opener=opener)
+
+    def run(**kwargs):
+        return refresh_candle_datasets(
+            root=tmp_path,
+            targets=[RefreshTarget("ABC", 10)],
+            till_date="2026-01-01",
+            fetcher=fetcher,
+            cache_dir=tmp_path / "cache",
+            delay_seconds=0,
+            **kwargs,
+        )
+
+    run(from_date="2026-01-01")
+    result = run()
+    assert len(calls) == 2
+    assert result["datasets"][0]["row_count"] == 2
 
 
 class DataRefreshTests(unittest.TestCase):

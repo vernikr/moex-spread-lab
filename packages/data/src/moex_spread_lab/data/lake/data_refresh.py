@@ -21,6 +21,7 @@ from .h1_seal import SealedH1Reader
 from .io import atomic_write_json, writer_lock
 from .parquet_store import ParquetBarStore
 from .refresh_merge import (
+    INTRADAY_INTERVALS,
     REFRESH_SCHEMA,
     DataRefreshError,
     RefreshConfig,
@@ -134,7 +135,12 @@ def _run_single_chunk(
         board=cfg.board,
         timeout=cfg.timeout,
         delay_seconds=cfg.delay_seconds,
-        cache_dir=cfg.cache_dir,
+        cache_dir=(
+            None
+            if state.target.interval in INTRADAY_INTERVALS
+            and state.watermark == cfg.until == chunk_till
+            else cfg.cache_dir
+        ),
         retries=cfg.retries,
         raw_sink=raw_sink,
     )

@@ -10,7 +10,9 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from moex_spread_lab.data.iss import catalog
 from moex_spread_lab.data.iss.catalog import (
+    _candidate_status,
     analyze_candle_pair,
     fetch_candle_coverage,
     fetch_candle_series,
@@ -154,6 +156,47 @@ def snapshot(data):
 
 def candles(data):
     return {"candles": block("open close high low value volume begin end", data)}
+
+
+@pytest.mark.parametrize(
+    ("leg", "field", "value"),
+    [
+        ("CNYRUBF", "asset_code", "SBER"),
+        ("CRZ6", "asset_code", "GAZR"),
+        ("CNYRUBF", "source_vintage", "historical"),
+        ("CRZ6", "source_vintage", "historical"),
+        ("CNYRUBF", "quote_quality", "missing_quote"),
+        ("CRZ6", "quote_quality", "crossed_quote"),
+    ],
+)
+def test_candidate_rejects_invalid_pair(leg, field, value):
+    instruments = snapshot(payload())["instruments"]
+    next(item for item in instruments if item["secid"] == leg)[field] = value
+    result = _candidate_status(instruments, "CNYRUBF", "CRZ6")
+    assert result["status"] == "not_admitted"
+    assert any("historical executable bid/ask" in reason for reason in result["reasons"])
+
+
+def test_candidate_admission_preserves_caveat_and_rejects_missing_leg():
+    instruments = snapshot(payload())["instruments"]
+    accepted = _candidate_status(instruments, "CNYRUBF", "CRZ6")
+    assert accepted["status"] == "conditionally_admitted_analytical_only"
+    assert accepted["execution_status"] == "blocked_historical_quote_evidence"
+    assert any("historical executable bid/ask" in reason for reason in accepted["reasons"])
+    assert _candidate_status(instruments, "CNYRUBF", "MISSING")["status"] == "not_admitted"
+
+
+def test_candidate_status_does_not_parse_reason_text(monkeypatch):
+    instruments = snapshot(payload())["instruments"]
+    monkeypatch.setattr(catalog, "_evaluate_candidate_pair", lambda *_: (["rewritten"], [], False))
+    assert _candidate_status(instruments, "CNYRUBF", "CRZ6")["status"] == "not_admitted"
+    monkeypatch.setattr(
+        catalog, "_evaluate_candidate_pair", lambda *_: (["invalid or missing caveat"], [], True)
+    )
+    assert (
+        _candidate_status(instruments, "CNYRUBF", "CRZ6")["status"]
+        == "conditionally_admitted_analytical_only"
+    )
 
 
 class IssIntakeTests(unittest.TestCase):

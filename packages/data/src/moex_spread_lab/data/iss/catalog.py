@@ -190,19 +190,22 @@ def normalize_iss_payload(
 
 def _evaluate_candidate_pair(
     near: dict[str, Any], far: dict[str, Any]
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], bool]:
     reasons: list[str] = []
-    if near["asset_code"] not in ("CNYRUBTOM", "CNY") or far["asset_code"] != "CNY":
+    assets_valid = near["asset_code"] in ("CNYRUBTOM", "CNY") and far["asset_code"] == "CNY"
+    vintage_valid = all(item["source_vintage"] == "current_snapshot" for item in (near, far))
+    quotes_valid = all(item["quote_quality"] == "two_sided_quote" for item in (near, far))
+    if not assets_valid:
         reasons.append("asset-code relationship is not the configured CNY/RUB candidate")
-    if near["source_vintage"] != "current_snapshot" or far["source_vintage"] != "current_snapshot":
+    if not vintage_valid:
         reasons.append("unexpected source-vintage state")
     assumptions = [
         "historical contract parameters use the current snapshot until a dated specification is available"
     ]
     reasons.append("historical executable bid/ask is unavailable; execution replay remains blocked")
-    if any(item["quote_quality"] != "two_sided_quote" for item in (near, far)):
+    if not quotes_valid:
         reasons.append("one or both candidate instruments have invalid or missing current quotes")
-    return reasons, assumptions
+    return reasons, assumptions, assets_valid and vintage_valid and quotes_valid
 
 
 def _candidate_status(
@@ -217,17 +220,17 @@ def _candidate_status(
         reasons.append(f"near instrument not found: {near_secid}")
     if far is None:
         reasons.append(f"far instrument not found: {far_secid}")
+    pair_valid = False
     if near is not None and far is not None:
-        pair_reasons, assumptions = _evaluate_candidate_pair(near, far)
+        pair_reasons, assumptions, pair_valid = _evaluate_candidate_pair(near, far)
         reasons.extend(pair_reasons)
     both_found = near is not None and far is not None
-    has_invalid = any("invalid or missing" in reason for reason in reasons)
     return {
         "candidate_id": f"{near_secid}/{far_secid}",
         "near_secid": near_secid,
         "far_secid": far_secid,
         "status": "conditionally_admitted_analytical_only"
-        if both_found and not has_invalid
+        if both_found and pair_valid
         else "not_admitted",
         "reasons": reasons,
         "assumptions": assumptions,

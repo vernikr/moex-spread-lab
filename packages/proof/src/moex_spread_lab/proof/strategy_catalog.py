@@ -47,6 +47,7 @@ def _derive(registry: StrategyRegistry) -> Derived:
                 int(spec.min_value) if spec.kind == "int" else spec.min_value,
                 int(spec.max_value) if spec.kind == "int" else spec.max_value,
                 int(spec.step) if spec.kind == "int" else spec.step,
+                kind=spec.kind,
             )
             for spec in plugin.parameter_schema()
             if spec.tunable

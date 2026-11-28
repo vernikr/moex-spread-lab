@@ -411,7 +411,24 @@ def _intersect_axes(
 ) -> None:
     for name, b in _translate(other, active).items():
         a = axes[name]
-        axes[name] = Axis(max(a.low, b.low), min(a.high, b.high), a.step)
+        lo = max(a.low, b.low)
+        hi = min(a.high, b.high)
+        if hi < lo:
+            # Disjoint member domains: the cohort cannot share one search axis.
+            # Raise a clean domain error instead of building an inverted Axis
+            # that would later crash deep inside Optuna with an opaque ValueError.
+            raise W0Error(
+                f"Параметр '{name}' "
+                f"несовместим "
+                f"между окнами "
+                f"когорты: "
+                f"пересечение "
+                f"пусто [{a.low}, {a.high}] "
+                f"· [{b.low}, {b.high}]."
+            )
+        # Cohort members reuse one strategy schema, so their steps match.
+        step = a.step if a.step == b.step else a.step
+        axes[name] = Axis(lo, hi, step)
 
 
 def _filter_training(

@@ -6,7 +6,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 from moex_spread_lab.core.w0 import W0Error
 
@@ -22,7 +22,9 @@ type _Progress = Callable[[int, int], None]
 
 
 class _SuggestTrial(Protocol):
-    def suggest_int(self, name: str, low: int, high: int) -> int: ...
+    def suggest_int(
+        self, name: str, low: int, high: int, *, step: int = 1
+    ) -> int: ...
 
     def suggest_float(
         self, name: str, low: float, high: float, *, step: float | None = None
@@ -34,20 +36,39 @@ class Axis:
     low: float
     high: float
     step: float
+    kind: Literal["int", "float"] = "float"
+
+    def __post_init__(self) -> None:
+        if self.step <= 0:
+            raise ValueError(f"Axis step must be > 0, got {self.step!r}")
+        if self.low > self.high:
+            raise ValueError(
+                f"Axis low ({self.low!r}) must be <= high ({self.high!r})"
+            )
+
+    @property
+    def is_integer(self) -> bool:
+        """Integer-valued axis: explicit int kind, or a float axis with unit step."""
+        return self.kind == "int" or (self.kind == "float" and self.step == 1)
 
     def contains(self, value: object) -> bool:
         if type(value) not in (int, float):
             return False
         assert isinstance(value, (int, float))
-        return (
-            self.low <= value <= self.high
-            and math.isfinite(value)
-            and (self.step != 1 or type(value) is int)
-        )
+        if not math.isfinite(value):
+            return False
+        if not self.low <= value <= self.high:
+            return False
+        if self.kind == "int" and type(value) is not int:
+            return False
+        grid = (value - self.low) / self.step
+        return math.isclose(grid, round(grid), rel_tol=0.0, abs_tol=1e-9)
 
     def suggest(self, trial: _SuggestTrial, name: str, high: float) -> int | float:
-        if self.step == 1:
-            return trial.suggest_int(name, int(self.low), int(high))
+        if self.is_integer:
+            return trial.suggest_int(
+                name, int(self.low), int(high), step=int(self.step)
+            )
         return round(trial.suggest_float(name, self.low, high, step=self.step), 6)
 
 

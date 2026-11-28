@@ -124,6 +124,8 @@ def test_current_day_pages_are_refetched_and_reported(monkeypatch, tmp_path, end
                     "data": [[f"2026-11-{20 + h}", 1] for h in range(count)],
                 }
             }
+        if endpoint == "history":
+            payload["history.cursor"] = {"columns": ["TOTAL"], "data": [[count]]}
         return _Response(json.dumps(payload).encode())
 
     def run():
@@ -173,6 +175,8 @@ def test_page_cached_during_session_is_refetched_after_rollover(monkeypatch, tmp
                     "data": [[f"2026-11-{20 + h}", 1] for h in range(count)],
                 }
             }
+        if endpoint == "history":
+            payload["history.cursor"] = {"columns": ["TOTAL"], "data": [[count]]}
         return _Response(json.dumps(payload).encode())
 
     def run():
@@ -235,7 +239,10 @@ def test_open_day_request_finishing_after_midnight_is_not_reused(monkeypatch, tm
         if endpoint == "candles":
             payload = candles([[1, 1, 1, 1, 1, 1, "2026-11-26 12:00:00", "2026-11-26 12:59:59"]])
         else:
-            payload = {"history": {"columns": ["TRADEDATE"], "data": [["2026-11-26"]]}}
+            payload = {
+                "history": {"columns": ["TRADEDATE"], "data": [["2026-11-26"]]},
+                "history.cursor": {"columns": ["TOTAL"], "data": [[1]]},
+            }
         return _Response(json.dumps(payload).encode())
 
     def run():
@@ -311,7 +318,10 @@ def test_closed_history_pages_reused_after_years_without_network(monkeypatch, tm
         payload = (
             candles([[1, 1, 1, 1, 1, 1, "2026-02-01 12:00:00", "2026-02-01 12:59:59"]])
             if endpoint == "candles"
-            else {"history": {"columns": ["TRADEDATE"], "data": [["2026-02-01"]]}}
+            else {
+                "history": {"columns": ["TRADEDATE"], "data": [["2026-02-01"]]},
+                "history.cursor": {"columns": ["TOTAL"], "data": [[1]]},
+            }
         )
         return _Response(json.dumps(payload).encode())
 
@@ -353,6 +363,39 @@ def test_offline_history_missing_cursor_page_fails_closed(monkeypatch, tmp_path)
 
     with pytest.raises(iss_http.IssHistoryError, match="missing or unverified"):
         iss_http.fetch_history(*args, cache_dir=tmp_path, cache_only=True, opener=no_network)
+
+
+def test_offline_history_rejects_missing_cursor(monkeypatch, tmp_path):
+    from moex_spread_lab.data.iss import iss_http
+
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: datetime(2028, 1, 1, tzinfo=UTC))
+    args = ("TEST", "2025-01-01", "2026-01-01")
+    page = {
+        "url": iss_http.history_url(*args, 0),
+        "cached_at": "2026-02-01T00:00:00+00:00",
+        "payload": {"history": {"columns": ["TRADEDATE"], "data": [["2025-01-01"]]}},
+    }
+    (tmp_path / "TEST-2025-01-01-2026-01-01-0.json").write_text(json.dumps(page))
+    with pytest.raises(iss_http.IssHistoryError, match="cursor"):
+        iss_http.fetch_history(*args, cache_dir=tmp_path, cache_only=True)
+
+
+def test_offline_history_rejects_wrong_cursor_index(monkeypatch, tmp_path):
+    from moex_spread_lab.data.iss import iss_http
+
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: datetime(2028, 1, 1, tzinfo=UTC))
+    args = ("TEST", "2025-01-01", "2026-01-01")
+    page = {
+        "url": iss_http.history_url(*args, 0),
+        "cached_at": "2026-02-01T00:00:00+00:00",
+        "payload": {
+            "history": {"columns": ["TRADEDATE"], "data": [["2025-01-01"]]},
+            "history.cursor": {"columns": ["INDEX", "TOTAL"], "data": [[100, 1]]},
+        },
+    }
+    (tmp_path / "TEST-2025-01-01-2026-01-01-0.json").write_text(json.dumps(page))
+    with pytest.raises(iss_http.IssHistoryError, match="cursor index"):
+        iss_http.fetch_history(*args, cache_dir=tmp_path, cache_only=True)
 
 
 def test_history_rejects_inconsistent_cursor_totals(tmp_path, monkeypatch):
@@ -978,7 +1021,9 @@ class IssHistoryContractTests(unittest.TestCase):
         self.assertEqual(first["rows"][99]["CLOSE"], 999)
 
         def empty(url, timeout):
-            return _Response(b'{"history":{"columns":["TRADEDATE"],"data":[]}}')
+            return _Response(
+                b'{"history":{"columns":["TRADEDATE"],"data":[]},"history.cursor":{"columns":["TOTAL"],"data":[[0]]}}'
+            )
 
         self.assertEqual(
             fetch_history("TEST", "a", "b", opener=empty, delay_seconds=0, allow_empty=True)[

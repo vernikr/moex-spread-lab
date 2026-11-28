@@ -61,7 +61,9 @@ mirror in lockstep:
   current Moscow date. Historical pages require a non-future request-start
   timestamp on a later Moscow date than the requested end date, but do not
   expire by age. Unknown or invalid vintage causes a refetch. Intake results
-  list each page's `cache` or `network` source; pagination must complete.
+  list each page's `cache` or `network` source. History pagination requires
+  a consistent ISS cursor total and exactly that many returned rows; candles
+  use ISS's short-page termination. Both must complete before use.
   Offline history readers reject missing or unverified pages without downloading.
   Reconciliation with ISS is explicit; it does not run automatically. Calendar
   windows and the proof catalog track changes in page eligibility;

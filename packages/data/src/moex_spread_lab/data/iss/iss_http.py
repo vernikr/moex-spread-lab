@@ -443,24 +443,24 @@ def _load_or_fetch_history_page(
     return payload, raw_hash, "network"
 
 
-def _parse_history_total(payload: dict[str, Any], error: type[W0Error]) -> int | None:
-    if not payload.get("history.cursor"):
-        return None
+def _parse_history_total(payload: dict[str, Any], error: type[W0Error], start: int) -> int:
     cursor_rows = history_rows(payload.get("history.cursor"), "history.cursor", error=error)
-    return (
-        int(cursor_rows[0]["TOTAL"])
-        if cursor_rows and cursor_rows[0].get("TOTAL") is not None
-        else None
-    )
+    total = cursor_rows[0].get("TOTAL") if len(cursor_rows) == 1 else None
+    if type(total) is not int or total < 0:
+        raise error("ISS history cursor has no valid total")
+    index = cursor_rows[0].get("INDEX", start)
+    if type(index) is not int or index != start:
+        raise error(f"ISS history cursor index does not match start {start}")
+    return total
 
 
 def _consistent_history_total(
     payload: dict[str, Any], previous: int | None, cfg: _HistoryFetchConfig, start: int
 ) -> int | None:
-    current = _parse_history_total(payload, cfg.error)
-    if current is not None and previous is not None and current != previous:
+    current = _parse_history_total(payload, cfg.error, start)
+    if previous is not None and current != previous:
         raise cfg.error(f"ISS history cursor total changed for {cfg.secid} at {start}")
-    return current if current is not None else previous
+    return current
 
 
 def _paginate_history_pages(
@@ -486,7 +486,7 @@ def _paginate_history_pages(
         page += 1
         if len(block_rows) < HISTORY_PAGE_SIZE:
             break
-    if total is not None and len(all_rows) < total:
+    if total is not None and len(all_rows) != total:
         raise cfg.error(
             f"Неполная история ISS {cfg.secid}: получено строк {len(all_rows)} из {total}."
         )

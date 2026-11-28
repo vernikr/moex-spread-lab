@@ -23,6 +23,7 @@ from moex_spread_lab.strategies.calendar.proof_runner import (
     _build_h1_eligible_rows,
     execute_calendar_proof,
 )
+from moex_spread_lab.strategies.calendar_eval import evaluate_variants
 from synthetic_history import iso_weekdays_until as _days
 
 TERMS = {"mult": 1.0, "margin_rate": 0.15}
@@ -461,6 +462,40 @@ class ProofPayloadTests(unittest.TestCase):
         sliced = slice_window_through(unk_win, "2026-02-02T23:59:59")
         self.assertFalse(sliced["tradable_every_session"])
         self.assertFalse(sliced["tradable_every_day"])
+
+    def test_evaluate_variants_propagates_quantity_to_reference_flat_round_trip(self):
+        rows = [
+            {
+                "date": f"2026-01-{d:02d}",
+                "spread": 100.0 + (0.2 if d % 2 else -0.2) if d < 24 else 500.0,
+                "open_spread": 100.0 + (0.2 if d % 2 else -0.2) if d < 24 else 500.0,
+                "near_close": 30000.0,
+                "far_close": 30100.0 if d < 24 else 30500.0,
+                "dev_pp": 0.0,
+                "days_to_near_expiry": 40 - d,
+                "dividend_in_window": False,
+                "margin": 5000.0,
+                "min_volume": 500,
+            }
+            for d in range(1, 28)
+        ]
+        bm = {f"2026-01-{d:02d}": 1.0 + 0.001 * d for d in range(1, 28)}
+        res = evaluate_variants(
+            {"SRH6/SRM6": rows}, bm, tariff_profile(1.0), quantity=5, close_at_end=True
+        )
+        by_cost = {
+            v["cost_model"]: v
+            for v in res
+            if v["strategy"] == "zscore_mean_reversion" and v["variant"] == "next_close"
+        }
+        ref = by_cost["reference_flat_round_trip"]
+        pub = by_cost["published_tariff"]
+        self.assertEqual([t["quantity"] for t in ref["trade_list"]], [5])
+        self.assertEqual(ref["gross_rub"], pub["gross_rub"])
+        self.assertEqual(
+            ref["lqdt_on_pair_margin_while_open_rub"],
+            pub["lqdt_on_pair_margin_while_open_rub"],
+        )
 
     def test_execute_calendar_proof_honors_threshold_pp_and_rejects_bad_params(self):
         days = [f"2026-01-{day:02d}" for day in range(1, 28)]

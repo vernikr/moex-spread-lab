@@ -338,7 +338,7 @@ def evaluate_variants(
                     {
                         "strategy": strategy,
                         "cost_model": "reference_flat_round_trip",
-                        **account_trades(label, per_pair, benchmark, None),
+                        **account_trades(label, per_pair, benchmark, None, quantity=quantity),
                     }
                 )
             variants.append(

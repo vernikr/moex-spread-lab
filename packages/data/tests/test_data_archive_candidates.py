@@ -7,6 +7,7 @@ import pytest
 import zstandard as zstd
 
 from moex_spread_lab.core.w0 import canonical_bytes
+from moex_spread_lab.data.lake.parquet_store import ParquetBarStore
 from moex_spread_lab.data.retention.data_archive_candidates import (
     _fingerprint,
     execute,
@@ -40,6 +41,78 @@ def setup(tmp_path):
 def plan(setup):
     root, path, archive = setup
     return execute(root, path, "dry-run", archive)
+
+
+def _register_candidate(root):
+    source = root / "data/w1/candles/A_10m.json"
+    source.write_text(
+        json.dumps(
+            {
+                "schema_version": "iss-candles.v1",
+                "secid": "A",
+                "interval": 10,
+                "timeframe": "10m",
+                "rows": [
+                    {
+                        "begin": "2026-01-01 10:00:00",
+                        "end": "2026-01-01 10:09:59",
+                        "open": 1,
+                        "high": 1,
+                        "low": 1,
+                        "close": 1,
+                        "value": 1,
+                        "volume": 1,
+                    }
+                ],
+            }
+        )
+    )
+    ParquetBarStore(root).import_legacy(source)
+    return source
+
+
+def test_registered_source_is_excluded_from_plan(setup):
+    root, _, _ = setup
+    source = _register_candidate(root)
+    result = plan(setup)
+    assert "w1/candles/A_10m.json" not in [entry["path"] for entry in result["files"]]
+    assert source.is_file()
+    assert ParquetBarStore(root).verify_all()["status"] == "verified"
+
+
+def test_invalid_lake_manifest_fails_closed(setup):
+    root, _, _ = setup
+    manifest = root / "data-lake/manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text("not json")
+    with pytest.raises(DataRetentionError, match="lake manifest"):
+        plan(setup)
+    assert (root / "data/w1/candles/A_10m.json").is_file()
+
+
+def test_late_registration_invalidates_plan_before_archive_or_apply(setup):
+    root, path, _archive = setup
+    source = root / "data/w1/candles/A_10m.json"
+    source.write_text(
+        json.dumps(
+            {
+                "schema_version": "iss-candles.v1",
+                "secid": "A",
+                "interval": 10,
+                "timeframe": "10m",
+                "rows": [
+                    {"begin": "2026-01-01 10:00:00", "end": "2026-01-01 10:09:59", "close": 1}
+                ],
+            }
+        )
+    )
+    plan(setup)
+    execute(root, path, "archive-only")
+    ParquetBarStore(root).import_legacy(source)
+    with pytest.raises(DataRetentionError, match="registered"):
+        execute(root, path, "apply")
+    assert source.exists()
+    assert ParquetBarStore(root).verify_all()["status"] == "verified"
 
 
 def test_roundtrip_and_protection(setup):

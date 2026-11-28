@@ -1,3 +1,4 @@
+import argparse
 import importlib
 import json
 import tempfile
@@ -6,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from moex_spread_lab.data import cli
 from moex_spread_lab.data.lake.bar_types import DataLakeError
 from moex_spread_lab.data.lake.parquet_store import ParquetBarStore
 
@@ -149,6 +151,35 @@ class DataLakeTests(unittest.TestCase):
                 revisions[-1]["record"]["legacy_sha256"], replacement["legacy_sha256"]
             )
             self.assertEqual(store.verify_legacy(legacy)["status"], "verified")
+
+
+def test_verify_all_reports_each_dataset_failure_and_keeps_healthy_results(tmp_path, capsys):
+    helper = DataLakeTests()
+    first = helper._legacy(tmp_path, "A.json")
+    second = helper._legacy(tmp_path, "B.json")
+    first_payload = json.loads(first.read_text())
+    second_payload = json.loads(second.read_text())
+    first_payload["secid"] = "A"
+    second_payload["secid"] = "B"
+    first.write_text(json.dumps(first_payload))
+    second.write_text(json.dumps(second_payload))
+    store = ParquetBarStore(tmp_path)
+    store.import_legacy(first)
+    store.import_legacy(second)
+    first.unlink()
+    result = store.verify_all()
+    assert result["status"] == "failed"
+    assert result["dataset_count"] == 2
+    assert result["datasets"][0]["dataset_id"] == "1h/A"
+    assert result["datasets"][0]["status"] == "failed"
+    assert "missing legacy source" in result["datasets"][0]["error"]
+    assert result["datasets"][1]["dataset_id"] == "1h/B"
+    assert result["datasets"][1]["status"] == "verified"
+    parser = argparse.ArgumentParser()
+    cli.register(parser.add_subparsers(dest="command", required=True))
+    args = parser.parse_args(["data-verify", "--root", str(tmp_path), "--format", "json"])
+    assert cli.run(args) == 1
+    assert json.loads(capsys.readouterr().out)["failed_count"] == 1
 
 
 def test_data_root_shims_and_h1_archive_fail_to_import():

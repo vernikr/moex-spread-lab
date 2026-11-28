@@ -4,7 +4,10 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
+
 from moex_spread_lab.data.lake import raw_archive
+from moex_spread_lab.data.lake.io import writer_lock
 from moex_spread_lab.data.lake.parquet_store import ParquetBarStore
 from moex_spread_lab.data.lake.raw_archive import RawResponseArchive
 
@@ -79,6 +82,20 @@ def test_concurrent_imports_keep_all_manifest_records(tmp_path):
     store = ParquetBarStore(tmp_path)
     assert len(store.read_manifest()["datasets"]) == 50
     assert store.verify_all()["dataset_count"] == 50
+
+
+def test_import_waits_for_manifest_lock_before_reading_source(tmp_path):
+    path = _legacy(tmp_path, "ABC")
+    store = ParquetBarStore(tmp_path)
+    lock_path = store.lake_root / "locks" / "manifest.lock"
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with writer_lock(lock_path):
+            future = executor.submit(store.import_legacy, path)
+            with pytest.raises(TimeoutError):
+                future.result(timeout=0.25)
+            assert not store.bars_root.exists()
+        future.result(timeout=10)
+    assert store.verify_legacy(path)["status"] == "verified"
 
 
 def test_upsert_recovers_unregistered_parquet(tmp_path):

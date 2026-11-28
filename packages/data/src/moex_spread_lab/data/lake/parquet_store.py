@@ -138,11 +138,18 @@ class ParquetBarStore:
 
     def _upsert_manifest(self, record: dict[str, Any]) -> None:
         with writer_lock(self.lake_root / "locks" / "manifest.lock"):
-            self._manifest_sig = None
-            upsert_manifest(self.manifest_path, self._read_manifest(), record)
-            self._manifest_sig = None
+            self._upsert_manifest_unlocked(record)
+
+    def _upsert_manifest_unlocked(self, record: dict[str, Any]) -> None:
+        self._manifest_sig = None
+        upsert_manifest(self.manifest_path, self._read_manifest(), record)
+        self._manifest_sig = None
 
     def import_legacy(self, legacy_path: Path, *, replace: bool = False) -> dict[str, Any]:
+        with writer_lock(self.lake_root / "locks" / "manifest.lock"):
+            return self._import_legacy_unlocked(legacy_path, replace=replace)
+
+    def _import_legacy_unlocked(self, legacy_path: Path, *, replace: bool) -> dict[str, Any]:
         series = _read_legacy_series(legacy_path)
         bars_path, sources_path = self._paths(series)
         reject_sealed_table_write(self.root, bars_path)
@@ -153,7 +160,7 @@ class ParquetBarStore:
         atomic_write_parquet(bars_path, table_from_rows(series.bars, BAR_SCHEMA))
         atomic_write_parquet(sources_path, table_from_rows(series.sources, SOURCE_SCHEMA))
         record = build_import_record(self.root, series, bars_path, sources_path)
-        self._upsert_manifest(record)
+        self._upsert_manifest_unlocked(record)
         return record
 
     def _record(self, secid: str, timeframe: str) -> dict[str, Any]:
@@ -242,13 +249,22 @@ class ParquetBarStore:
 
     def verify_all(self) -> dict[str, Any]:
         records = manifest_records(self._read_manifest())
-        datasets = [
-            self.verify_legacy(self.record_path(str(record.get("legacy_path", ""))))
-            for record in sorted(records, key=lambda item: str(item.get("dataset_id")))
-        ]
+        datasets: list[dict[str, Any]] = []
+        for record in sorted(records, key=lambda item: str(item.get("dataset_id"))):
+            try:
+                result = self.verify_legacy(self.record_path(str(record.get("legacy_path", ""))))
+            except (OSError, ValueError, KeyError, pa.ArrowException) as exc:
+                result = {
+                    "status": "failed",
+                    "dataset_id": record.get("dataset_id"),
+                    "error": str(exc),
+                }
+            datasets.append(result)
+        failed_count = sum(item["status"] != "verified" for item in datasets)
         return {
-            "status": "verified",
+            "status": "failed" if failed_count else "verified",
             "dataset_count": len(datasets),
+            "failed_count": failed_count,
             "datasets": datasets,
             "raw": self.raw_archive.verify(),
         }

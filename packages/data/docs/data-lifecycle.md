@@ -104,8 +104,11 @@ Monitoring is read-only; nothing deletes without an explicit, verified command.
 - `data-archive-candidates` plans, archives and — in a separate maintenance
   window with writers stopped — applies reviewed archival of the selected
   non-runtime groups. Every step is plan-bound and revalidated against current
-  file hashes, publishes no-clobber archives and receipts, records a durable
-  apply journal, and requires an advisory lock. Restore into a new empty
+  file hashes, excludes source paths registered in the default `data-lake`
+  manifest, publishes no-clobber archives and receipts, records a durable
+  apply journal, and requires an advisory lock. This retired CLI's internal
+  API does not discover separately configured lakes; inspect their manifests
+  and protect their sources separately before use. Restore into a new empty
   staging directory and compare restored sizes and SHA-256 against the
   embedded manifest before copying anything back.
 - `archive-catalog --archive … --review-date … --output …` verifies each

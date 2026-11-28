@@ -261,6 +261,7 @@ def _run_data_refresh(args: Any) -> int:
 _LAKE_KEYS = (
     "status",
     "dataset_count",
+    "failed_count",
     "expired_entry_count",
     "orphan_file_count",
     "retained_entry_count",
@@ -275,7 +276,7 @@ def _run_lake_maintenance(args: Any) -> int:
         store.verify_all() if args.command == "data-verify" else store.compact(force=args.force)
     )
     _emit(output if args.format == "json" else {k: output[k] for k in _LAKE_KEYS if k in output})
-    return 0
+    return 1 if args.command == "data-verify" and output["status"] != "verified" else 0
 
 
 _DISPATCH: dict[str, Callable[[Any], int]] = {

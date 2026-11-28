@@ -19,6 +19,9 @@ from typing import Any, TypedDict, cast
 import zstandard as zstd
 
 from moex_spread_lab.core.w0 import JsonObject, as_str_dict, canonical_bytes, sha256_file
+from moex_spread_lab.data.lake.bar_types import DataLakeError
+from moex_spread_lab.data.lake.io import writer_lock
+from moex_spread_lab.data.lake.parquet_catalog import parse_lake_manifest
 
 from . import data_retention as _data_retention
 from .data_inventory import _inspect_file, _policy, build_data_inventory
@@ -92,11 +95,32 @@ def _json_new(path: Path, value: JsonObject) -> None:
         os.fsync(handle.fileno())
 
 
+def _registered_sources(root: Path) -> set[Path]:
+    manifest = root / "data-lake" / "manifest.json"
+    if not manifest.exists() and not manifest.is_symlink():
+        return set()
+    try:
+        records = parse_lake_manifest(manifest)["datasets"]
+    except DataLakeError as exc:
+        raise DataRetentionError(f"cannot safely inspect lake manifest: {exc}") from exc
+    registered: set[Path] = set()
+    for record in cast(list[object], records):
+        if not isinstance(record, dict):
+            raise DataRetentionError("invalid legacy path in lake manifest")
+        value = cast(dict[str, Any], record).get("legacy_path")
+        if not isinstance(value, str) or not value:
+            raise DataRetentionError("invalid legacy path in lake manifest")
+        path = Path(value)
+        registered.add((path if path.is_absolute() else root / path).resolve())
+    return registered
+
+
 def build_plan(root: Path, archive: Path) -> dict[str, Any]:
     root = root.resolve()
     archive = _validate_archive_path(root, archive)
     if archive.exists() or archive.is_symlink():
         raise DataRetentionError("archive destination already exists")
+    registered = _registered_sources(root)
     inventory = build_data_inventory(root, include_hashes=True)
     entries = cast(list[JsonObject], inventory["files"])
     files: list[dict[str, Any]] = sorted(
@@ -108,6 +132,7 @@ def build_plan(root: Path, archive: Path) -> dict[str, Any]:
             }
             for entry in entries
             if _eligible(str(entry["path"]), cast(dict[str, Any], entry.get("metadata", {})))
+            and (root / "data" / str(entry["path"])).resolve() not in registered
         ),
         key=lambda entry: entry["path"],
     )
@@ -152,8 +177,12 @@ def _validate(plan: JsonObject, root: Path) -> None:
     if not isinstance(files, list) or not files:
         raise DataRetentionError("plan must contain candidates")
     seen: set[str] = set()
+    registered = _registered_sources(root)
     for entry in cast(list[JsonObject], files):
         _validate_entry(entry, root, seen)
+        source = _safe_data_path(root, cast(str, entry["path"]))
+        if source.resolve() in registered:
+            raise DataRetentionError(f"candidate is a registered lake source: {entry['path']}")
     entries = _entries(plan)
     if entries != sorted(entries, key=lambda e: e["path"]) or _fingerprint(entries) != plan.get(
         "source_fingerprint"
@@ -298,4 +327,5 @@ def execute(root: Path, plan_path: Path, mode: str, archive: Path | None = None)
             raise DataRetentionError("plan and archive output paths must be distinct")
         if mode == "archive-only":
             return _archive_only_candidates(resolved_root, plan, archive_path, receipt)
-        return _apply_candidates(resolved_root, plan, archive_path, receipt, report)
+        with writer_lock(resolved_root / "data-lake" / "locks" / "manifest.lock"):
+            return _apply_candidates(resolved_root, plan, archive_path, receipt, report)

@@ -164,6 +164,18 @@ def _content_digest(path: Path, stat: os.stat_result) -> str | None:
     return digest
 
 
+def _prune_walked_dirs(base: Path, current: Path, dirnames: list[str], seen_dirs: set[str]) -> None:
+    kept: list[str] = []
+    for name in dirnames:
+        target = current / name
+        real = os.path.realpath(target)
+        if name.startswith((".", "__pycache__")) or real in seen_dirs or _excluded(base, target):
+            continue
+        seen_dirs.add(real)
+        kept.append(name)
+    dirnames[:] = kept
+
+
 def _entry(root: Path, path: Path) -> list[Any] | None:
     try:
         stat = path.stat()
@@ -177,17 +189,19 @@ def _entry(root: Path, path: Path) -> list[Any] | None:
 
 
 def contributing_files(root: Path) -> list[list[Any]]:
-    """All fingerprint-relevant files: relpath, mtimes, size, content digest."""
+    """All fingerprint-relevant files: relpath, mtimes, size, content digest.
+
+    Symlinked directories are followed (market data may live outside the repo,
+    e.g. under data/market -> /external); a realpath guard keeps symlinked
+    directory cycles from being walked twice.
+    """
     root = root.resolve()
     entries: list[list[Any]] = []
     for base in _data_roots(root):
-        for dirpath, dirnames, filenames in os.walk(base):
+        seen_dirs: set[str] = {os.path.realpath(base)}
+        for dirpath, dirnames, filenames in os.walk(base, followlinks=True):
             current = Path(dirpath)
-            dirnames[:] = [
-                name
-                for name in dirnames
-                if not name.startswith((".", "__pycache__")) and not _excluded(base, current / name)
-            ]
+            _prune_walked_dirs(base, current, dirnames, seen_dirs)
             for name in filenames:
                 entry = _entry(root, current / name)
                 if entry is not None:

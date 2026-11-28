@@ -48,6 +48,30 @@ def test_fingerprint_covers_data_and_sources(tmp_path):
     assert derived_cache.fingerprint(root, "ns", ("a", "1")) != first
 
 
+def test_fingerprint_covers_symlinked_data_directories(tmp_path):
+    root = _root(tmp_path)
+    external = tmp_path / "market-data"
+    external.mkdir()
+    (external / "candles.csv").write_text("a,b\n1,2\n")
+    (root / "data" / "market").symlink_to(external, target_is_directory=True)
+    before = derived_cache.fingerprint(root, "ns")
+    files = derived_cache.contributing_files(root)
+    assert any(entry[0] == "data/market/candles.csv" for entry in files)
+    (external / "candles.csv").write_text("a,b\n3,4\nCHANGED\n")
+    assert derived_cache.fingerprint(root, "ns") != before
+
+
+def test_symlink_cycle_is_not_walked_twice(tmp_path):
+    root = _root(tmp_path)
+    loop_a = root / "data" / "loop_a"
+    loop_a.mkdir()
+    (loop_a / "file.txt").write_text("payload\n")
+    (loop_a / "back").symlink_to(root / "data", target_is_directory=True)
+    files = derived_cache.contributing_files(root)
+    paths = [entry[0] for entry in files]
+    assert paths.count("data/loop_a/file.txt") == 1
+
+
 def test_analytics_runtime_state_is_excluded(tmp_path):
     root = _root(tmp_path)
     before = derived_cache.fingerprint(root, "ns")

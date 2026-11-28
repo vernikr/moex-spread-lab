@@ -165,6 +165,37 @@ def test_lqdt_overlay_does_not_finance_a_deficit_at_the_benchmark_rate() -> None
     assert recovered.max_deficit == pytest.approx(90.0)
 
 
+@pytest.mark.parametrize(
+    ("legs", "quantity", "message"),
+    [
+        ([(NEAR, 100.0)], 0, "quantity must be a positive integer"),
+        ([(NEAR, 100.0)], -5, "quantity must be a positive integer"),
+        ([(NEAR, 100.0)], 1.5, "quantity must be a positive integer"),
+        ([(NEAR, 100.0)], True, "quantity must be a positive integer"),
+        ([], 1, "at least one leg"),
+        ([(NEAR, float("nan"))], 1, "price must be a finite positive"),
+        ([(NEAR, 0.0)], 1, "price must be a finite positive"),
+        ([({**NEAR, "tick_size": 0.0}, 1.0)], 1, "tick size must be a finite positive"),
+        ([({**NEAR, "tick_value": -1.0}, 1.0)], 1, "tick value must be a finite positive"),
+        (
+            [({"secid": "X", "tariff_group": "bogus", "tick_value": 1.0, "tick_size": 1.0}, 1.0)],
+            1,
+            "no taker rate for bogus",
+        ),
+        ([({"tick_value": 1.0, "tick_size": 1.0}, 1.0)], 1, "missing its secid"),
+        ([(NEAR, 100.0)], 1, "slippage ticks must be a finite non-negative"),
+    ],
+)
+def test_side_cost_rejects_invalid_legs_and_quantities(
+    legs: list[tuple[dict[str, Any], float]], quantity: object, message: str
+) -> None:
+    profile = tariff_profile()
+    if "slippage" in message:
+        profile = {**profile, "slippage_ticks": float("nan")}
+    with pytest.raises(W0Error, match=message):
+        side_cost(profile, legs, quantity, as_of="2026-11-02")  # type: ignore[arg-type]
+
+
 def test_cost_totals_keeps_every_component_or_fails_closed() -> None:
     trade = {
         "entry": {"costs": {"exchange_clearing": 1.0, "broker": 0.5, "slippage": 2.0}},

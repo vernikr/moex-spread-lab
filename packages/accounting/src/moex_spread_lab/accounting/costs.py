@@ -106,6 +106,35 @@ def _broker_fee(profile: dict[str, Any], as_of: date) -> float:
     return float(fee)
 
 
+def _leg_values(contract: object, price: object) -> tuple[str, float, float, float]:
+    if not isinstance(contract, dict):
+        raise W0Error("side cost leg must be a contract mapping")
+    leg = cast(dict[str, Any], contract)
+    secid = leg.get("secid")
+    if not isinstance(secid, str) or not secid:
+        raise W0Error("side cost leg is missing its secid")
+    tick_value = _positive(leg.get("tick_value"), f"{secid} tick value")
+    tick_size = _positive(leg.get("tick_size"), f"{secid} tick size")
+    return secid, tick_value, tick_size, _positive(price, f"{secid} price")
+
+
+def _quantity(value: object) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise W0Error("quantity must be a positive integer number of contracts")
+    return value
+
+
+def _positive(value: object, name: str) -> float:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        raise W0Error(f"{name} must be a finite positive number")
+    return float(value)
+
+
 def side_cost(
     profile: dict[str, Any],
     legs: list[tuple[dict[str, Any], float]],
@@ -115,28 +144,43 @@ def side_cost(
     native_spread: bool = False,
 ) -> dict[str, float]:
     """Native calendar-spread orders pay tariff on both legs but cross one spread book for slippage."""
+    quantity = _quantity(quantity)
+    if not legs:
+        raise W0Error("side cost needs at least one leg")
     try:
         trade_date = date.fromisoformat(str(as_of)[:10])
     except ValueError as exc:
         raise W0Error("side cost requires an ISO trade date") from exc
     rates = _taker_rates(profile)
     broker_fee = _broker_fee(profile, trade_date)
+    slippage_ticks = _non_negative(profile.get("slippage_ticks"), "slippage ticks")
     exchange = slippage = 0.0
     for position, (contract, price) in enumerate(legs):
-        group = contract.get("tariff_group") or CONTRACT_GROUP.get(contract["secid"])
+        secid, tick_value, tick_size, leg_price = _leg_values(contract, price)
+        group = contract.get("tariff_group") or CONTRACT_GROUP.get(secid)
         if group is None:
-            raise W0Error(f"no tariff group assigned for {contract['secid']}")
+            raise W0Error(f"no tariff group assigned for {secid}")
         if group not in rates:
             raise W0Error(f"cost profile has no taker rate for {group}")
-        value = price * contract["tick_value"] / contract["tick_size"]
-        exchange += value * rates[group] / 100 * quantity
+        exchange += leg_price * tick_value / tick_size * rates[group] / 100 * quantity
         if not native_spread or position == 0:
-            slippage += profile["slippage_ticks"] * contract["tick_value"] * quantity
+            slippage += slippage_ticks * tick_value * quantity
     return {
         "exchange_clearing": exchange,
         "broker": broker_fee * quantity * len(legs),
         "slippage": slippage,
     }
+
+
+def _non_negative(value: object, name: str) -> float:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+        or value < 0
+    ):
+        raise W0Error(f"{name} must be a finite non-negative number")
+    return float(value)
 
 
 def _cost_value(component: str, value: object) -> float:

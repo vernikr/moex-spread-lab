@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 import sys
 import tempfile
@@ -13,7 +14,7 @@ from http.server import ThreadingHTTPServer
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
-from typing import ClassVar, cast
+from typing import Any, ClassVar, cast
 from unittest import mock
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -21,6 +22,7 @@ for _extra in (_REPO_ROOT / "packages/proof/tests", _REPO_ROOT / "tests"):
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
+import moex_spread_lab.web.http_handler as http_handler  # noqa: E402
 import moex_spread_lab.web.routes_proof as strategy_registry  # noqa: E402
 import moex_spread_lab.web.server as web_server  # noqa: E402
 from moex_spread_lab.core.contracts import (  # noqa: E402
@@ -113,6 +115,20 @@ class WebPackageArchitectureTests(unittest.TestCase):
                 json.loads(line) for line in history.read_text(encoding="utf-8").splitlines()[2:]
             ]
             self.assertEqual([record["run_id"] for record in records], ["old", "new"])
+
+    def test_json_transport_replaces_non_finite_numbers_with_null(self) -> None:
+        assets: list[tuple[int, bytes, str]] = []
+        handler = SimpleNamespace(
+            send_asset=lambda status, body, content_type: assets.append(
+                (status, body, content_type)
+            ),
+            wfile=BytesIO(),
+        )
+        http_handler.LoopbackHandler.send_json(cast(Any, handler), 200, {"value": math.nan})
+        http_handler.LoopbackHandler.emit_ndjson(cast(Any, handler), {"value": math.inf})
+
+        self.assertEqual(assets, [(200, b'{"value": null}', "application/json; charset=utf-8")])
+        self.assertEqual(handler.wfile.getvalue(), b'{"value": null}\n')
 
     def test_json_media_type_is_case_insensitive(self) -> None:
         handler = SimpleNamespace(

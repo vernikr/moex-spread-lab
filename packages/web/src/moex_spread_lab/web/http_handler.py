@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
+from moex_spread_lab.core._fastcore_loader import clean_obj
+
 WEB_PACKAGE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = (WEB_PACKAGE_DIR / "static").resolve()
 VENDOR_DIR = (WEB_PACKAGE_DIR / "vendor").resolve()
@@ -47,6 +49,10 @@ def _allowed_hosts_env() -> set[str]:
     return {
         _header_token(p) for p in os.environ.get("MSL_ALLOWED_HOSTS", "").split(",") if p.strip()
     }
+
+
+def _json_bytes(value: Any) -> bytes:
+    return json.dumps(clean_obj(value), ensure_ascii=False, allow_nan=False).encode("utf-8")
 
 
 def resolve_static_asset(url_path: str) -> tuple[Path, str] | None:
@@ -99,11 +105,7 @@ class LoopbackHandler(BaseHTTPRequestHandler):
             remaining -= len(chunk)
 
     def send_json(self, status: int, value: Any) -> None:
-        self.send_asset(
-            status,
-            json.dumps(value, ensure_ascii=False).encode("utf-8"),
-            "application/json; charset=utf-8",
-        )
+        self.send_asset(status, _json_bytes(value), "application/json; charset=utf-8")
 
     def start_ndjson(self) -> None:
         self.send_response(200)
@@ -115,7 +117,7 @@ class LoopbackHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def emit_ndjson(self, value: Any) -> None:
-        line = (json.dumps(value, ensure_ascii=False) + "\n").encode("utf-8")
+        line = _json_bytes(value) + b"\n"
         try:
             self.wfile.write(line)
             self.wfile.flush()

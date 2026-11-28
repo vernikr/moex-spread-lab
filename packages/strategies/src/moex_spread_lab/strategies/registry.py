@@ -9,10 +9,9 @@ import os
 import pkgutil
 from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from moex_spread_lab.core import universe as _universe
-from moex_spread_lab.core.contracts import StrategyPlugin, plugin_proof_adapter
+from moex_spread_lab.core.contracts import StrategyPlugin, plugin_is_builtin, plugin_proof_adapter
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 
@@ -94,9 +93,13 @@ def calendar_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
     )
 
 
-BUILTIN_STRATEGY_IDS: frozenset[str] = frozenset(
-    str(key) for key in cast("Mapping[str, Any]", _universe.STRATEGIES)
-)
+def builtin_pair_strategies() -> dict[str, StrategyPlugin]:
+    """Builtin pair-universe plugins keyed by id; single source for their labels/defaults."""
+    return {
+        p.strategy_id: p
+        for p in discover_strategies()
+        if PAIR_UNIVERSE in p.supported_universes and plugin_is_builtin(p)
+    }
 
 
 def daily_pair_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
@@ -119,7 +122,7 @@ def daily_pair_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
         and p.supported_universes == frozenset({PAIR_UNIVERSE})
         and _has_price_fills(p)
         # Third-party plugins opt in only when their family is unambiguous.
-        and (p.strategy_id in BUILTIN_STRATEGY_IDS or counts[p.family_id] == 1)
+        and (p.strategy_id in builtin_pair_strategies() or counts[p.family_id] == 1)
     )
 
 
@@ -134,7 +137,7 @@ def carry_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
         and p.supported_universes == frozenset({PAIR_UNIVERSE})
         and p.supported_fills == ("same_day_settlement",)
         and p.requires_daily_bars is True
-        and (p.strategy_id in BUILTIN_STRATEGY_IDS or counts[p.family_id] == 1)
+        and (p.strategy_id in builtin_pair_strategies() or counts[p.family_id] == 1)
         and bool(p.parameter_schema())
         and all(spec.tunable for spec in p.parameter_schema())
     )

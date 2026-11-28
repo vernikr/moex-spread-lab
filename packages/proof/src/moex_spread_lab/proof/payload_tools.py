@@ -408,7 +408,7 @@ def _build_catalog(service: CatalogService, settings: ResearchSettings) -> dict[
         carry_proof_plugin_ids,
         daily_pair_proof_plugin_ids,
     )
-    from moex_spread_lab.strategies.registry import BUILTIN_STRATEGY_IDS
+    from moex_spread_lab.strategies.registry import builtin_pair_strategies
 
     from .strategy_catalog import get_strategy_registry
 
@@ -429,7 +429,7 @@ def _build_catalog(service: CatalogService, settings: ResearchSettings) -> dict[
         for p in registry
         # Built-in engines are already served by the native strategy controls; the
         # discovery surface lists drop-in plugins only.
-        if p.strategy_id in adapted and p.strategy_id not in BUILTIN_STRATEGY_IDS
+        if p.strategy_id in adapted and p.strategy_id not in builtin_pair_strategies()
     ]
     return {
         **calendar,

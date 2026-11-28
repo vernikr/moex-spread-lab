@@ -1,6 +1,5 @@
-"""Catalog boundary: Layer 0 keeps only generic identifiers, the concrete MOEX catalogs
-have exactly one definition site under ``data/universe``, and the deprecated
-``core.universe`` accessors resolve to those same objects."""
+"""Catalog boundary: Layer 0 keeps only generic identifiers and the concrete MOEX
+catalogs have exactly one definition site under ``data/universe``."""
 
 from __future__ import annotations
 
@@ -56,9 +55,11 @@ def test_layer_zero_keeps_only_generic_identifiers() -> None:
     assert offenders == [], f"concrete MOEX catalogs defined outside msl-data: {offenders}"
 
 
-def test_deprecated_core_accessors_resolve_to_the_same_objects() -> None:
+def test_core_universe_exposes_no_concrete_catalogs() -> None:
+    for name in (*CORE_CATALOG_NAMES, "STRATEGIES"):
+        assert not hasattr(core_universe, name), name
+        assert name not in core_universe.__all__, name
     namespace: dict[str, object] = {}
     exec("from moex_spread_lab.core.universe import *", namespace)
-    for name in CORE_CATALOG_NAMES:
-        assert getattr(core_universe, name) is getattr(data_universe, name), name
-        assert namespace[name] is getattr(data_universe, name), name
+    for name in (*CONCRETE_NAMES, "STRATEGIES"):
+        assert name not in namespace, name

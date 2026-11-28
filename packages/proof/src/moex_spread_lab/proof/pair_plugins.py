@@ -17,7 +17,7 @@ from moex_spread_lab.core.w0 import W0Error, run_id
 from moex_spread_lab.strategies import attach_entry_levels, pair_fill
 from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
 from moex_spread_lab.strategies.pair_screener import _pair, execution_settings
-from moex_spread_lab.strategies.registry import BUILTIN_STRATEGY_IDS
+from moex_spread_lab.strategies.registry import builtin_pair_strategies
 
 from .fixed_plugin_payload import fixed_daily_pair_plugin_payload
 from .pair_payload import (
@@ -44,7 +44,7 @@ class PairPluginRoute:
         self.selection = selection
         self.settings = settings
         self.plugin = plugin
-        self._builtin = plugin.strategy_id in BUILTIN_STRATEGY_IDS
+        self._builtin = plugin.strategy_id in builtin_pair_strategies()
 
     def _template_request(self, req: dict[str, Any], fill: str) -> dict[str, Any]:
         """Native template request; a built-in proves its own engine with real parameters."""

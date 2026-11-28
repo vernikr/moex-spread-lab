@@ -27,7 +27,6 @@ from moex_spread_lab.strategies import PRICE_FILLS, pair_fill
 from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
 from moex_spread_lab.strategies.pair_mean_reversion.engine import AnalyticsError
 from moex_spread_lab.strategies.pair_screener import (
-    STRATEGIES,
     _pair,
     _parameters,
     execution_settings,
@@ -35,6 +34,7 @@ from moex_spread_lab.strategies.pair_screener import (
 from moex_spread_lab.strategies.pair_screener import (
     catalog as _pair_catalog,
 )
+from moex_spread_lab.strategies.registry import builtin_pair_strategies
 
 from .carry_payload import run_carry
 from .fixed_plugin_payload import fixed_pair_accounting
@@ -261,7 +261,9 @@ def prepare_pair(
     pair = _pair(selection.get("pair"))
     near, far = pair["near"], pair["far"]
     strategy = selection.get("strategy")
-    if not isinstance(strategy, str) or (strategy not in STRATEGIES and carry_plugin is None):
+    if not isinstance(strategy, str) or (
+        strategy not in builtin_pair_strategies() and carry_plugin is None
+    ):
         raise W0Error("неизвестная стратегия")
     screen_strategy = "funding_only" if carry_plugin is not None else strategy
     inputs = service.screener_inputs

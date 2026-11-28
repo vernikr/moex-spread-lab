@@ -11,7 +11,6 @@ from typing import Any, cast
 
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair
 from moex_spread_lab.accounting.costs import tariff_profile
-from moex_spread_lab.core import universe as _universe
 from moex_spread_lab.core.settings import MAX_QUANTITY, EvaluationSplit, read_settings
 from moex_spread_lab.core.timeframes import TimeframeSpec, get_timeframe
 
@@ -19,10 +18,8 @@ from ..funding_carry.engine import build_carry_strategy
 from ..funding_carry.proof_funding import FundingWindow
 from ..funding_carry.study import build_carry_study, fetch_history
 from ..pair_mean_reversion.engine import run_mean_reversion_baseline
-from .catalog import catalog
+from .catalog import STRATEGIES, catalog
 from .inputs import ScreenerError, ScreenerInputs, _make_proof_funding, _pair, pair_price_inputs
-
-STRATEGIES: dict[str, dict[str, Any]] = cast(dict[str, dict[str, Any]], _universe.STRATEGIES)
 
 __all__ = [
     "MAX_QUANTITY",

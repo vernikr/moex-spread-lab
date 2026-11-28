@@ -201,12 +201,10 @@ async function readJson(r) {
   return d;
 }
 
-export async function api(path, body, signal) {
-  const r = await window.fetch(
-    path,
-    body ? { signal, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined,
-  );
-  return readJson(r);
+export function api(path, body, signal) {
+  // The signal must reach GETs too: a superseded catalog read otherwise lands after a newer one.
+  const init = body ? { signal, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { signal };
+  return window.fetch(path, init).then(readJson);
 }
 
 export async function apiStream(path, body, signal, onProgress) {

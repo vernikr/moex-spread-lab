@@ -206,7 +206,9 @@ function _computeSpreadValues(S, mode) {
       const vx = cnt * sxx - sx * sx;
       const phi = vx !== 0 ? (cnt * sxy - sx * sy) / vx : 0;
       const a = (sy - phi * sx) / cnt;
-      if (!isFinite(phi) || Math.abs(phi) >= 0.999 || Math.abs(1 - phi) < 1e-6 || phi < 0) {
+      // A negative `phi` is a valid mean-reverting fit (overshooting return to equilibrium);
+      // only a non-stationary or degenerate `phi -> 1` falls back to the window mean.
+      if (!isFinite(phi) || Math.abs(phi) >= 0.999 || Math.abs(1 - phi) < 1e-6) {
         out[t] = cur - m;
         continue;
       }

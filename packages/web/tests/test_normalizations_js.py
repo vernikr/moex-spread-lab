@@ -220,6 +220,52 @@ console.log(JSON.stringify({{
     assert out["negGapped"] < 0 and abs(out["negGapped"] - out["negGapFree"]) < 1e-2, out
 
 
+@pytest.mark.skipif(not shutil.which("node"), reason="Node is optional")
+def test_ou60_normalization_keeps_a_negative_phi_mean_reverting_fit() -> None:
+    """#347: `phi < 0` is a valid overshooting OU fit, not a reason to fall back to the mean."""
+    script = f"""
+const mod = await import({json.dumps((_JS_DIR / "normalizations.js").as_uri())});
+const series = [];
+let v = 1.0;
+for (let t = 0; t < 60; t++) {{
+  series.push({{ spread_rel: v }});
+  v = 0.5 - 0.5 * (v - 0.5);
+}}
+const out = mod.spreadDisplayValues(series, "ou60");
+const mean = series.reduce((acc, r) => acc + r.spread_rel, 0) / series.length;
+console.log(JSON.stringify({{ eq: out[59], meanBased: series[59].spread_rel - mean }}));
+"""
+    out = _node_json(script)
+    # The OU residual sits on the equilibrium, the window-mean residual does not.
+    assert abs(out["eq"]) < abs(out["meanBased"]) / 2, out
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="Node is optional")
+def test_api_forwards_the_abort_signal_on_get() -> None:
+    """#352: a GET read must be cancellable/supersedable, not silently fire-and-forget."""
+    script = f"""
+const seen = [];
+globalThis.window = {{
+  fetch: (path, init) => {{
+    seen.push(init);
+    return Promise.resolve({{ ok: true, json: async () => ({{ path }}) }});
+  }},
+}};
+const {{ api }} = await import({json.dumps((_JS_DIR / "dom.js").as_uri())});
+const controller = new AbortController();
+await api("/api/settings", null, controller.signal);
+await api("/api/proof/catalog", {{ universe: "pair_screen" }}, controller.signal);
+console.log(JSON.stringify({{
+  getHasSignal: seen[0]?.signal === controller.signal,
+  postHasSignal: seen[1]?.signal === controller.signal,
+  postMethod: seen[1]?.method,
+}}));
+"""
+    out = _node_json(script)
+    assert out["getHasSignal"], out
+    assert out["postHasSignal"] and out["postMethod"] == "POST", out
+
+
 _LEDGER_SCRIPT = """
 const charts = await import($charts);
 const dom = await import($dom);

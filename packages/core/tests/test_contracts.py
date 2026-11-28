@@ -52,6 +52,29 @@ class CoreContractsTests(unittest.TestCase):
         self.assertEqual(prefix.initial_capital_rub, snap.initial_capital_rub)
         self.assertEqual(len(snap.rows), 2)
 
+    def test_window_snapshot_truncation_filters_future_funding_rates(self) -> None:
+        rows = tuple({"date": f"2026-01-{day:02d}", "spread": 1.0} for day in range(1, 6))
+        snap = WindowSnapshot(
+            universe="calendar_native",
+            pair="SRH6/SRM6",
+            rows=rows,
+            funding_swaprates={"2026-01-01": 1.0, "2026-01-05": 9.0},
+            carry_study={"rows": ("r0", "r1", "r2", "r3", "r4"), "name": "carry"},
+        )
+        prefix = snap.truncated(2)
+        self.assertEqual(prefix.funding_swaprates, {"2026-01-01": 1.0})
+        self.assertEqual(prefix.carry_study, {"rows": ("r0", "r1"), "name": "carry"})
+        self.assertEqual(snap.funding_swaprates, {"2026-01-01": 1.0, "2026-01-05": 9.0})
+
+    def test_window_snapshot_truncation_rejects_negative_count(self) -> None:
+        snap = WindowSnapshot(
+            universe="calendar_native",
+            pair="SRH6/SRM6",
+            rows=({"date": "2026-01-01"},),
+        )
+        with self.assertRaises(ValueError):
+            snap.truncated(-1)
+
     def test_compatibility_verdict_fields(self) -> None:
         self.assertTrue(CompatibilityVerdict(True).compatible)
         rejected = CompatibilityVerdict(False, "requires daily funding")

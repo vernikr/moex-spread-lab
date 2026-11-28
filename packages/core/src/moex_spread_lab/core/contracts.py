@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, cast, runtime_checkable
 
 from .settings import ResearchSettings
 
@@ -104,11 +104,27 @@ class WindowSnapshot:
 
     def truncated(self, count: int) -> WindowSnapshot:
         """Return a causal prefix copy containing only the first ``count`` rows."""
+        if not count >= 0:
+            raise ValueError(f"count must be >= 0, got {count!r}")
         prefix_rows = tuple(self.rows[:count])
+        prefix_dates = {str(row["date"]) for row in prefix_rows if "date" in row}
         carry_study = self.carry_study
-        if carry_study is not None and isinstance(carry_study.get("rows"), list):
-            carry_study = {**carry_study, "rows": list(carry_study["rows"][:count])}
-        return replace(self, rows=prefix_rows, carry_study=carry_study)
+        if carry_study is not None:
+            study_rows = carry_study.get("rows")
+            if isinstance(study_rows, Sequence) and not isinstance(study_rows, str | bytes):
+                carry_study = {
+                    **carry_study,
+                    "rows": cast(Sequence[Any], study_rows)[:count],
+                }
+        funding = self.funding_swaprates
+        if funding is not None:
+            funding = {day: rate for day, rate in funding.items() if day in prefix_dates}
+        return replace(
+            self,
+            rows=prefix_rows,
+            carry_study=carry_study,
+            funding_swaprates=funding,
+        )
 
 
 @dataclass(frozen=True)

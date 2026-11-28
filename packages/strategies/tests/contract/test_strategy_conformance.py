@@ -14,8 +14,11 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, ClassVar
+
+import pytest
 
 from conformance_fixtures import (
     BUILTIN_PARAMS,
@@ -28,6 +31,7 @@ from conformance_fixtures import (
     pair_mean_reversion_fixture,
 )
 from moex_spread_lab.core.contracts import (
+    CompatibilityVerdict,
     EntryBandPoint,
     StrategyIntentRun,
     StrategyPlugin,
@@ -174,6 +178,58 @@ class StrategyPluginConformanceTests(unittest.TestCase):
                     {},
                     "unsupported_fill_mode",
                 )
+
+
+class _FundingPeekPlugin:
+    """Non-causal plugin: closes a trade only if it can see the last funding rate."""
+
+    strategy_id = "funding_peek"
+    family_id = "funding_peek"
+    label_ru = "Чтение будущего"
+    short_label_ru = "funding peek"
+    supported_universes = frozenset({"futures_pair"})
+    supported_fills = ("next_open",)
+    requires_daily_bars = False
+
+    def parameter_schema(self, context=None):
+        return ()
+
+    def validate_parameters(self, raw, context=None):
+        return {}
+
+    def check_compatibility(self, window: WindowSnapshot, settings=None):
+        return CompatibilityVerdict(True)
+
+    def evaluate_intents(self, window, params, fill):
+        dates = [str(row["date"]) for row in window.rows]
+        rate = (window.funding_swaprates or {}).get(dates[-1]) if dates else None
+        intents = ()
+        if rate is not None and rate > 5.0 and len(dates) >= 2:
+            intents = ({"entry_date": dates[0], "exit_date": dates[1], "reason": "funding_peek"},)
+        return StrategyIntentRun(
+            strategy_id=self.strategy_id,
+            fill=fill,
+            parameters={},
+            intents=intents,
+        )
+
+    def compute_entry_bands(self, series, params, fill, *, far_point_value_rub=1.0):
+        return [EntryBandPoint(date=str(r.get("date", ""))) for r in series]
+
+
+def test_strategy_reading_future_funding_fails_causal_conformance():
+    start = date(2026, 1, 5)
+    rows = [{"date": (start + timedelta(days=i)).isoformat(), "spread": 1.0} for i in range(30)]
+    last_date = rows[-1]["date"]
+    window = WindowSnapshot(
+        universe="futures_pair",
+        pair="SRH6/SRM6",
+        rows=tuple(rows),
+        funding_swaprates={row["date"]: (9.0 if row["date"] == last_date else 1.0) for row in rows},
+    )
+    plugin = _FundingPeekPlugin()
+    with pytest.raises(AssertionError, match="future-dependent"):
+        assert_causal_conformance(plugin, window, rows, {}, cutoffs=[14], require_trade=False)
 
 
 def test_calendar_intent_adapter_matches_existing_engines():

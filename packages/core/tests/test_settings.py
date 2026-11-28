@@ -33,6 +33,27 @@ class GlobalPeriodTests(unittest.TestCase):
             with self.assertRaisesRegex(W0Error, "Недостаточно наблюдений"):
                 EvaluationSplit.from_dates(dates, percent)
 
+    def test_from_dates_rejects_unsorted_and_duplicate_dates(self):
+        for dates in (
+            ("2026-01-05", "2026-01-01", "2026-01-03"),
+            ("2026-01-01", "2026-01-01", "2026-01-03"),
+            ("b", "a"),
+        ):
+            with (
+                self.subTest(dates=dates),
+                self.assertRaisesRegex(W0Error, "строго возрастающими"),
+            ):
+                EvaluationSplit.from_dates(dates, 30)
+
+    def test_metadata_reports_effective_validation_percent(self):
+        dates = tuple(f"d{i:02}" for i in range(10))
+        split = EvaluationSplit.from_dates(dates, 0.01)
+        self.assertEqual(len(split.validation), 1)
+        self.assertEqual(split.metadata()["validation_percent"], 0.01)
+        self.assertEqual(split.metadata()["effective_validation_percent"], 10.0)
+        zero = EvaluationSplit.from_dates(dates, 0)
+        self.assertEqual(zero.metadata()["effective_validation_percent"], 0.0)
+
     def test_timeframe_is_validated_and_survives_partial_updates(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

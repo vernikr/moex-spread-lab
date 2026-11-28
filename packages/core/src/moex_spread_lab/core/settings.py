@@ -205,6 +205,8 @@ class EvaluationSplit:
         dates = tuple(dates)
         if not dates or (percent and len(dates) < 2):
             raise W0Error("Недостаточно наблюдений для выбранного разбиения.")
+        if any(dates[index] >= dates[index + 1] for index in range(len(dates) - 1)):
+            raise W0Error("Даты должны быть строго возрастающими и уникальными.")
         # Round down to complete observations, but never silently disable a requested check.
         count = max(1, int(len(dates) * Decimal(str(percent)) / 100)) if percent else 0
         cut = len(dates) - count
@@ -215,8 +217,11 @@ class EvaluationSplit:
         return "validation" if self.validation else "training"
 
     def metadata(self) -> dict[str, object]:
+        total = len(self.training) + len(self.validation)
+        effective = (len(self.validation) / total * 100) if total else 0.0
         return {
             "validation_percent": self.percent,
+            "effective_validation_percent": effective,
             "result_basis": self.basis,
             "periods": {
                 "training": [self.training[0], self.training[-1]],

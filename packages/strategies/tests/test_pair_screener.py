@@ -195,7 +195,9 @@ def test_build_result_branches_preserve_deterministic_run_ids(tmp_path: Path) ->
         inputs,
         {"pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion", "slippage_ticks": 1.0},
     )
-    assert mr["run_id"] == "2ef61842f889be64"
+    assert (
+        mr["run_id"] == "7a8a67724b90280f"
+    )  # re-recorded for #272 (effective_validation_percent in payload)
     assert mr["metrics_scope"] == "full_history"
 
     mr_through = build_result(
@@ -221,14 +223,14 @@ def test_build_result_branches_preserve_deterministic_run_ids(tmp_path: Path) ->
         },
         validation_share=20.0,
     )
-    assert carry_cny["run_id"] == "4f4aa49ac9acc41c"
+    assert carry_cny["run_id"] == "6e6d2613a5951dea"  # re-recorded for #272
     assert all("Non-CNY" not in note for note in carry_cny["notes"])
 
     carry_gld = build_result(
         inputs,
         {"pair": "GLDRUBF/GLZ6", "strategy": "funding_only", "parameters": {"lookback": 10}},
     )
-    assert carry_gld["run_id"] == "d700cf9ae38b977f"
+    assert carry_gld["run_id"] == "a8d155d159e546cd"  # re-recorded for #272
     assert any("Non-CNY funding-rule caps" in note for note in carry_gld["notes"])
 
 

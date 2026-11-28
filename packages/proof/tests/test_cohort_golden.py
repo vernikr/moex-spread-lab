@@ -32,10 +32,12 @@ BYTE_EXACT_PLATFORM = "Linux"
 # Re-recorded with the shared shortfall tolerance (refs #273, #297): the daily cash walk
 # no longer grows a sub-tolerance negative balance, so the last bits of this payload moved
 # while the platform-independent NUMERIC_DIGEST below stayed identical.
-BYTE_EXACT_RUN_ID = "83d5b37b63761496"
-BYTE_EXACT_DIGEST = "774d41b3e53730b8221eb48545bfe0b8818944276809d5c840453098635d66a4"
+# Re-recorded again for #272: evaluation metadata now carries effective_validation_percent,
+# which is part of the hashed payload (NUMERIC_DIGEST moved with it).
+BYTE_EXACT_RUN_ID = "940c946c7e532b75"
+BYTE_EXACT_DIGEST = "0e38e3a72fc0f61096b46587bae025a0cd6e55c85e43662aed0ff132ce2eddf4"
 # Platform-independent: floats rounded to 9 decimals, generated ids replaced.
-NUMERIC_DIGEST = "3d9099e0c7d4b7a35f28b12153085f455be6ecae32b76581e42993ae8dd5ed9c"
+NUMERIC_DIGEST = "e4b72d254e2986787f6d85abc7e0edf35391bd67738a8a8452ee0e2b00aae202"
 ROUND_DIGITS = 9
 
 

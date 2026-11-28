@@ -14,6 +14,7 @@ import pytest
 from moex_spread_lab.data.iss import catalog
 from moex_spread_lab.data.iss.catalog import (
     _candidate_status,
+    _quote_quality,
     analyze_candle_pair,
     fetch_candle_coverage,
     fetch_candle_series,
@@ -228,6 +229,36 @@ def snapshot(data):
 
 def candles(data):
     return {"candles": block("open close high low value volume begin end", data)}
+
+
+@pytest.mark.parametrize(
+    ("bid", "ask", "expected"),
+    [
+        (0, 0, "missing_quote"),
+        (71.1, 0, "missing_quote"),
+        (0, 71.1, "missing_quote"),
+        (None, 5, "missing_quote"),
+        (5, -1, "missing_quote"),
+        ("5", 6, "missing_quote"),
+        (True, 6, "missing_quote"),
+        (float("nan"), 6, "missing_quote"),
+        (5, float("inf"), "missing_quote"),
+        (5, 4, "crossed_quote"),
+        (5, 5, "two_sided_quote"),
+        (5, 6, "two_sided_quote"),
+        (10**400, 10**401, "two_sided_quote"),
+    ],
+)
+def test_quote_quality_requires_positive_finite_numeric_sides(bid, ask, expected):
+    assert _quote_quality(bid, ask) == expected
+
+
+def test_zero_quotes_are_missing_in_summary_and_block_candidate():
+    data = payload()
+    data["marketdata"]["data"][0][2:4] = [0, 0]
+    result = snapshot(data)
+    assert result["quote_quality_summary"]["missing_quote"] == 1
+    assert result["candidate"]["status"] == "not_admitted"
 
 
 @pytest.mark.parametrize(

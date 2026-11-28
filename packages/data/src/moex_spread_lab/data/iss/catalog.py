@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import urllib.request
 from collections.abc import Callable
 from typing import Any
@@ -104,7 +105,12 @@ def analyze_candle_pair(*args: Any, **kwargs: Any) -> dict[str, Any]:
 
 
 def _quote_quality(bid: Any, ask: Any) -> str:
-    if bid is None or ask is None:
+    def valid(value: Any) -> bool:
+        return (type(value) is int and value > 0) or (
+            type(value) is float and math.isfinite(value) and value > 0
+        )
+
+    if not valid(bid) or not valid(ask):
         return "missing_quote"
     if bid > ask:
         return "crossed_quote"

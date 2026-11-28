@@ -19,8 +19,7 @@
 static PyObject *k_date = NULL;
 static PyObject *k_cumulative_net_rub = NULL;
 static PyObject *k_account_value_rub = NULL;
-static PyObject *k_cash_shortfall = NULL;
-static PyObject *k_funding_rub = NULL;
+static PyObject *k_cash_shortfall = NULL, *k_funding_rub = NULL;
 static PyObject *k_funding_contracts = NULL;
 static PyObject *s_round_method = NULL;
 static PyObject *py_two = NULL;
@@ -602,8 +601,7 @@ static PyObject *clean_recursive(PyObject *value);
 static PyObject *clean_dict_items(PyObject *value) {
     PyObject *out = _PyDict_NewPresized(PyDict_GET_SIZE(value));
     if (!out) return NULL;
-    PyObject *key, *item;
-    Py_ssize_t pos = 0;
+    PyObject *key, *item; Py_ssize_t pos = 0;
     while (PyDict_Next(value, &pos, &key, &item)) {
         PyObject *cleaned = clean_recursive(item);
         if (!cleaned) {
@@ -931,27 +929,28 @@ static int step_open_position(SizingBarStep *st, int funding_only) {
     TradeSpec *tr = st->pos_trade;
     if (tr == NULL) return 0;
     int exiting = (st->i == tr->exit_idx);
+    if (exiting && !st->is_exit_elig && !tr->open_at_end) {
+        PyErr_SetString(PyExc_ValueError, "exit bar is not exit-eligible");
+        return -1;
+    }
     int should_exit = exiting && (st->is_exit_elig || tr->open_at_end);
-    int should_mark = should_exit || (st->is_elig && !exiting);
+    int should_mark = should_exit || st->is_elig;
     if (!should_mark) {
         st->funding_owner = tr;
         return 0;
     }
-    double end_val = should_exit ? tr->exit_spread_fill : st->spread_i;
-    double pt = should_exit ? tr->exit_point : st->point_i;
-    double qd = (double)tr->quantity;
-    double chg = 0.0;
+    double end_val = st->spread_i, pt = st->point_i;
+    if (should_exit) { end_val = tr->exit_spread_fill; pt = tr->exit_point; }
+    double qd = (double)tr->quantity, chg = 0.0;
     if (exact_round2(tr->sign * (end_val - st->pos_mark) * pt * qd, &chg) < 0) return -1;
-    tr->gross_rub += chg;
-    st->pos_mark = end_val;
-    st->daily += chg;
+    tr->gross_rub += chg; st->pos_mark = end_val; st->daily += chg;
     if (!should_exit) {
         st->funding_owner = tr;
         return 0;
     }
     if (st->unit_funding_contracts) st->funding_owner = tr;
     double fee = 0.0;
-    if (apply_trade_exit_costs(tr, qd, funding_only, &fee) < 0) return -1;
+    if (apply_trade_exit_costs(tr, (double)tr->quantity, funding_only, &fee) < 0) return -1;
     if (tr->has_exit_costs) {
         st->cost += fee;
         st->fill_wealth += chg - fee;
@@ -987,7 +986,7 @@ static int try_open_candidate(
     st->pos_mark = cand->entry_spread_fill;
     st->funding_owner = cand;
     int same_day_exit = (cand->exit_idx == st->i);
-    if (st->is_elig) {
+    if (st->is_elig || same_day_exit) {
         double end_val = same_day_exit ? cand->exit_spread_fill : st->spread_i;
         double chg = 0.0;
         if (exact_round2(cand->sign * (end_val - st->pos_mark) * st->point_i * qd, &chg) < 0) return -1;

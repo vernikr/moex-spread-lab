@@ -508,6 +508,72 @@ class SizingRoundingTests(unittest.TestCase):
         self.assertEqual(result["ledger"][1]["mark_pnl_rub"], 0.0)
 
 
+class SameBarRoundTripTests(unittest.TestCase):
+    def _same_bar_unit(self, *, bar_eligible: bool):
+        unit, marks, contracts = unit_proof(near=(50000, 50100, 50100), entries=((1, 1),))
+        unit["series"][1].update(
+            volume_eligible=bar_eligible,
+            entry_eligible=True,
+            exit_eligible=True,
+        )
+        trade = unit["trades"][0]
+        trade["entry"]["spread_fill"] = 10.0
+        trade["exit"]["spread_fill"] = 12.0
+        return unit, marks, contracts
+
+    def test_same_bar_roundtrip_books_move_on_ineligible_bar_kernel(self):
+        unit, marks, contracts = self._same_bar_unit(bar_eligible=False)
+        result = replay(unit, marks, contracts)  # Python fallback books it
+        fallback_gross = result["trades"][0]["gross_rub"]
+        kernel_proof = deepcopy(unit)
+        kernel = size_proof(kernel_proof, marks, ResearchSettings(), contracts, metrics_only=True)
+        kernel_gross = kernel["trades"][0]["gross_rub"]
+        self.assertEqual(fallback_gross, kernel_gross)
+        qty = result["trades"][0]["quantity"]
+        self.assertEqual(fallback_gross, round((12.0 - 10.0) * qty, 2))
+
+    def test_exit_bar_not_exit_eligible_raises_public_and_kernel(self):
+        # The public entry point refuses such windows up front.
+        unit, marks, contracts = unit_proof(
+            near=(50000, 50100, 50200, 50300, 50400),
+            entries=((0, 3),),
+        )
+        unit["series"][3]["exit_eligible"] = False
+        with self.assertRaises(W0Error):
+            size_proof(deepcopy(unit), marks, ResearchSettings(), contracts)
+
+        # The kernel refuses too (defense in depth for direct callers, e.g. plugins):
+        # it must not silently leave the position open and misreport "overlap" later.
+        from array import array
+
+        from moex_spread_lab.core import _fastcore_loader as loader
+
+        fastcore = loader.load_fastcore()
+        if fastcore is None:
+            self.skipTest("_fastcore extension must load for the direct-kernel check")
+        dates = [f"2026-01-0{i + 1}" for i in range(6)]
+        rows = [{"funding_rub": None, "funding_contracts": 0} for _ in range(6)]
+        specs = [(0, 1, 3, 1, False, 10.0, 12.0, 2500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]
+        with self.assertRaisesRegex(ValueError, "exit bar is not exit-eligible"):
+            fastcore.size_proof_metrics(
+                dates,
+                array("d", [100.0] * 6),
+                array("d", [0.0] * 6),
+                array("d", [1.0] * 6),
+                array("d", [1000.0] * 6),
+                array("B", [1, 1, 1, 1, 1, 1]),
+                array("B", [1, 1, 1, 1, 1, 1]),
+                array("B", [1, 1, 1, 0, 1, 1]),
+                rows,
+                specs,
+                30000.0,
+                False,
+                False,
+                False,
+                True,
+            )
+
+
 class SizingSettingsTests(unittest.TestCase):
     def test_settings_migrate_persist_and_reject_invalid_slippage(self):
         with tempfile.TemporaryDirectory() as tmp:

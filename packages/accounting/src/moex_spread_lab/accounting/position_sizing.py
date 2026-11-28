@@ -62,6 +62,8 @@ class _Replay:
         if trade is None:
             return 0.0, 0.0, self.wealth, None
         exiting = self.row["date"] == trade["exit"]["date"]
+        if exiting and not self.exit_eligible and not trade.get("open_at_end"):
+            raise W0Error("exit bar is not exit-eligible")
         should_exit = exiting and (self.exit_eligible or bool(trade.get("open_at_end")))
         if not should_exit and not (self.eligible and not exiting):
             return 0.0, 0.0, self.wealth, trade
@@ -151,7 +153,9 @@ class _Replay:
         same_day = candidate["exit"]["date"] == self.row["date"]
         end_mark = candidate["exit"]["spread_fill"] if same_day else self.row["spread"]
         daily = (
-            self.move(candidate, end_mark, self.terms.point(self.index)) if self.eligible else 0.0
+            self.move(candidate, end_mark, self.terms.point(self.index))
+            if (self.eligible or same_day)
+            else 0.0
         )
         if same_day:
             cost += self.close(candidate, at_open=False)

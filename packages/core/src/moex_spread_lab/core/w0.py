@@ -176,13 +176,99 @@ def _validate_contract_number(
     return number
 
 
-def _instruments_by_secid(rows: Any) -> dict[Any, dict[str, Any]]:
-    instruments: dict[Any, dict[str, Any]] = {}
-    for row in rows:
-        if isinstance(row, dict):
-            instrument = cast(dict[str, Any], row)
-            instruments[instrument.get("secid")] = instrument
+def _instruments_by_secid(
+    rows: Any, *, source: str, error: type[W0Error]
+) -> dict[str, dict[str, Any]]:
+    if not isinstance(rows, list):
+        raise error(f"{source}: instruments must be a list")
+    instruments: dict[str, dict[str, Any]] = {}
+    for index, row in enumerate(cast(list[Any], rows)):
+        if not isinstance(row, dict):
+            raise error(f"{source}: instruments[{index}] must be an object")
+        instrument = cast(dict[str, Any], row)
+        secid = instrument.get("secid")
+        if not isinstance(secid, str) or not secid.strip():
+            raise error(f"{source}: instruments[{index}] is missing a secid")
+        if secid in instruments:
+            raise error(f"{source}: duplicate contract record for secid: {secid}")
+        instruments[secid] = instrument
     return instruments
+
+
+def _merge_historical(
+    instruments: dict[str, dict[str, Any]],
+    historical_path: Path,
+    error: type[W0Error],
+) -> tuple[set[str], str | None]:
+    """Fill gaps from the historical file. Returns (historical secids, digest if used)."""
+    if not historical_path.is_file():
+        return set(), None
+    historical, historical_digest = read_hashed_json(historical_path, error=error)
+    historical_map = _instruments_by_secid(
+        historical.get("instruments", []), source="historical contracts", error=error
+    )
+    historical_only = {k: v for k, v in historical_map.items() if k not in instruments}
+    instruments.update(historical_only)
+    return set(historical_only), historical_digest if historical_only else None
+
+
+def _selected_contract(
+    secid: str,
+    instrument: dict[str, Any] | None,
+    historical_secids: set[str],
+    error: type[W0Error],
+) -> dict[str, Any]:
+    if instrument is None:
+        raise error(f"contract is missing from intake: {secid}")
+    for field in (
+        "lot_size",
+        "tick_size",
+        "tick_value",
+        "initial_margin",
+        "source_vintage",
+    ):
+        if field not in instrument:
+            raise error(f"contract {secid} is missing {field}")
+    vintage = instrument["source_vintage"]
+    if not isinstance(vintage, str) or not vintage.strip():
+        raise error(f"contract {secid} is missing source_vintage")
+    lot_size = _validate_contract_number(
+        instrument["lot_size"],
+        f"{secid}.lot_size",
+        error=error,
+        positive=True,
+    )
+    if not lot_size.is_integer() or lot_size < 1:
+        raise error(f"{secid}.lot_size must be a whole number greater than or equal to 1")
+    return {
+        "secid": secid,
+        "stable_id": instrument.get("stable_id"),
+        "board": instrument.get("board"),
+        "expiry": instrument.get("expiry"),
+        "lot_size": int(lot_size),
+        "tick_size": _validate_contract_number(
+            instrument["tick_size"],
+            f"{secid}.tick_size",
+            error=error,
+            positive=True,
+        ),
+        "tick_value": _validate_contract_number(
+            instrument["tick_value"],
+            f"{secid}.tick_value",
+            error=error,
+            positive=True,
+        ),
+        "initial_margin": _validate_contract_number(
+            instrument["initial_margin"],
+            f"{secid}.initial_margin",
+            error=error,
+            positive=True,
+        ),
+        "source_vintage": vintage,
+        "tariff_group": instrument.get("tariff_group"),
+        "historical_evidence": instrument.get("historical_evidence", secid in historical_secids),
+        "historical_specification_basis": instrument.get("historical_specification_basis"),
+    }
 
 
 def load_contracts(
@@ -192,64 +278,24 @@ def load_contracts(
     *,
     error: type[W0Error] = W0Error,
 ) -> tuple[dict[str, Any], str]:
+    if near == far:
+        raise error("near and far must be different contracts")
     payload, digest = read_hashed_json(path, error=error)
-    instruments = _instruments_by_secid(payload.get("instruments", []))
-    historical_path = Path(path).parent / "historical-contracts.json"
-    if historical_path.is_file():
-        historical, historical_digest = read_hashed_json(historical_path, error=error)
-        instruments.update(_instruments_by_secid(historical.get("instruments", [])))
+    instruments = _instruments_by_secid(
+        payload.get("instruments", []), source="contracts", error=error
+    )
+    # Precedence (documented): the current intake is authoritative; the historical
+    # file only supplies contracts absent from it. Historical entries keep their
+    # provenance explicit via historical_evidence.
+    historical_secids, historical_digest = _merge_historical(
+        instruments, Path(path).parent / "historical-contracts.json", error
+    )
+    if historical_digest is not None:
         digest = hashlib.sha256(f"{digest}:{historical_digest}".encode("ascii")).hexdigest()
-    selected: dict[str, Any] = {}
-    for secid in (near, far):
-        instrument = instruments.get(secid)
-        if instrument is None:
-            raise error(f"contract is missing from intake: {secid}")
-        for field in (
-            "lot_size",
-            "tick_size",
-            "tick_value",
-            "initial_margin",
-            "source_vintage",
-        ):
-            if field not in instrument:
-                raise error(f"contract {secid} is missing {field}")
-        lot_size = _validate_contract_number(
-            instrument["lot_size"],
-            f"{secid}.lot_size",
-            error=error,
-            positive=True,
-        )
-        if not lot_size.is_integer() or lot_size < 1:
-            raise error(f"{secid}.lot_size must be a whole number greater than or equal to 1")
-        selected[secid] = {
-            "secid": secid,
-            "stable_id": instrument.get("stable_id"),
-            "board": instrument.get("board"),
-            "expiry": instrument.get("expiry"),
-            "lot_size": int(lot_size),
-            "tick_size": _validate_contract_number(
-                instrument["tick_size"],
-                f"{secid}.tick_size",
-                error=error,
-                positive=True,
-            ),
-            "tick_value": _validate_contract_number(
-                instrument["tick_value"],
-                f"{secid}.tick_value",
-                error=error,
-                positive=True,
-            ),
-            "initial_margin": _validate_contract_number(
-                instrument["initial_margin"],
-                f"{secid}.initial_margin",
-                error=error,
-                positive=True,
-            ),
-            "source_vintage": instrument["source_vintage"],
-            "tariff_group": instrument.get("tariff_group"),
-            "historical_evidence": instrument.get("historical_evidence", False),
-            "historical_specification_basis": instrument.get("historical_specification_basis"),
-        }
+    selected = {
+        secid: _selected_contract(secid, instruments.get(secid), historical_secids, error)
+        for secid in (near, far)
+    }
     return selected, digest
 
 

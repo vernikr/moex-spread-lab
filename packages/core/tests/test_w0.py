@@ -98,6 +98,116 @@ class W0Tests(unittest.TestCase):
                 load_contracts(path, "NEAR", "FAR")
             self.assertIn("must be a finite number", str(ctx.exception))
 
+    def test_load_contracts_rejects_null_source_vintage(self):
+        for vintage in (None, "", "   ", 42):
+            with tempfile.TemporaryDirectory() as directory:
+                path = _write_intake(directory)
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                for instrument in payload["instruments"]:
+                    instrument["source_vintage"] = vintage
+                path.write_text(json.dumps(payload), encoding="utf-8")
+                with self.assertRaisesRegex(W0Error, "source_vintage"):
+                    load_contracts(path, "NEAR", "FAR")
+
+    def test_load_contracts_rejects_non_list_instruments(self):
+        for bad in (None, "x", {"a": 1}, 42):
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "intake.json"
+                path.write_text(json.dumps({"instruments": bad}), encoding="utf-8")
+                with self.assertRaisesRegex(W0Error, "must be a list"):
+                    load_contracts(path, "NEAR", "FAR")
+
+    def test_load_contracts_rejects_non_dict_rows_and_missing_secid(self):
+        for bad_rows in ([["not", "a", "dict"]], [{"lot_size": 1}], [{"secid": "  "}]):
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "intake.json"
+                path.write_text(json.dumps({"instruments": bad_rows}), encoding="utf-8")
+                with self.assertRaises(W0Error):
+                    load_contracts(path, "NEAR", "FAR")
+
+    def test_load_contracts_rejects_near_equals_far(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = _write_intake(directory)
+            with self.assertRaisesRegex(W0Error, "different contracts"):
+                load_contracts(path, "NEAR", "NEAR")
+
+    def test_load_contracts_rejects_duplicate_secid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = _write_intake(directory)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            dupe = dict(payload["instruments"][0])
+            dupe["initial_margin"] = 5.0
+            payload["instruments"].append(dupe)
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(W0Error, "duplicate"):
+                load_contracts(path, "NEAR", "FAR")
+
+    def test_historical_only_fills_gaps_and_keeps_current_authoritative(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = _write_intake(directory)  # initial_margin == 100.0 for both legs
+            historical = {
+                "instruments": [
+                    {
+                        "secid": "NEAR",
+                        "lot_size": 1,
+                        "tick_size": 0.1,
+                        "tick_value": 1.0,
+                        "initial_margin": 99999.0,
+                        "source_vintage": "historical_2024",
+                    },
+                    {
+                        "secid": "OLDQ",
+                        "lot_size": 1,
+                        "tick_size": 0.1,
+                        "tick_value": 1.0,
+                        "initial_margin": 7.0,
+                        "source_vintage": "historical_2024",
+                    },
+                ]
+            }
+            (Path(directory) / "historical-contracts.json").write_text(
+                json.dumps(historical), encoding="utf-8"
+            )
+            selected, _ = load_contracts(path, "NEAR", "FAR")
+            # Current intake wins for legs present in both files.
+            self.assertEqual(selected["NEAR"]["initial_margin"], 100.0)
+            self.assertIs(selected["NEAR"]["historical_evidence"], False)
+
+    def test_historical_supplies_missing_leg_marked_as_historical(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = _write_intake(directory)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["instruments"] = [i for i in payload["instruments"] if i["secid"] != "FAR"]
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            historical = {
+                "instruments": [
+                    {
+                        "secid": "FAR",
+                        "lot_size": 1,
+                        "tick_size": 0.1,
+                        "tick_value": 1.0,
+                        "initial_margin": 42.0,
+                        "source_vintage": "historical_2024",
+                    }
+                ]
+            }
+            (Path(directory) / "historical-contracts.json").write_text(
+                json.dumps(historical), encoding="utf-8"
+            )
+            selected, _ = load_contracts(path, "NEAR", "FAR")
+            self.assertEqual(selected["FAR"]["initial_margin"], 42.0)
+            self.assertIs(selected["FAR"]["historical_evidence"], True)
+
+    def test_empty_historical_file_does_not_change_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = _write_intake(directory)
+            _, digest_before = load_contracts(path, "NEAR", "FAR")
+            (Path(directory) / "historical-contracts.json").write_text(
+                json.dumps({"instruments": []}), encoding="utf-8"
+            )
+            _, digest_after = load_contracts(path, "NEAR", "FAR")
+            self.assertEqual(digest_before, digest_after)
+
     def test_read_hashed_json_mutation_does_not_poison_cache(self):
         from moex_spread_lab.core import w0
 

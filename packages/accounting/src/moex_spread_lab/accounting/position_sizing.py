@@ -8,6 +8,7 @@ from typing import Any, cast
 from moex_spread_lab.core._fastcore_loader import load_fastcore
 from moex_spread_lab.core.w0 import W0Error, run_id
 
+from .account_risk import DEFAULT_STRESS_VM_BUFFER, DEFAULT_UNCERTAINTY_BUFFER
 from .costs import SHORTFALL_TOLERANCE, cost_totals
 from .sizing_fast import (
     Terms,
@@ -305,7 +306,13 @@ class _Replay:
         proof["notes"].extend(
             [
                 f"Размер каждого входа — максимум целых спредов по последней доступной стоимости счёта, не выше исходного капитала {initial:,.2f} ₽ из общих настроек; размер удерживается до выхода. Прибыль не расширяет исходный лимит, пополнений нет.",
-                "Размер покрывает ГО, комиссию и проскальзывание входа плюс резерв выхода по ценам входа. При обязательном стресс-гейте также учитываются 3×ГО, VM-буфер 5 000 ₽ на спред и буфер неопределённости 5 000 ₽ (для календаря — на спред, для пары — на счёт).",
+                (
+                    "Размер покрывает ГО, комиссию и проскальзывание входа плюс резерв выхода "
+                    "по ценам входа. При обязательном стресс-гейте также учитываются 3×ГО, "
+                    f"VM-буфер {_rub(DEFAULT_STRESS_VM_BUFFER)} ₽ на спред и буфер "
+                    f"неопределённости {_rub(DEFAULT_UNCERTAINTY_BUFFER)} ₽ "
+                    "(для календаря — на спред, для пары — на счёт)."
+                ),
                 "Это максимум по модели капитала, не гарантия доступного объёма в стакане. Пропуски записаны отдельно; новая попытка — на следующем входном сигнале стратегии.",
             ]
         )
@@ -352,6 +359,11 @@ def _require_executable_exits(proof: dict[str, Any]) -> None:
                 f"Плановая дата выхода {exit_date} не исполнима (exit_eligible=False); "
                 "перенесите выход на исполнимый день."
             )
+
+
+def _rub(value: float) -> str:
+    """Report money the way the operators read it: thousands separated by a space."""
+    return f"{value:,.0f}".replace(",", " ")
 
 
 def _require_lqdt_marks(proof: dict[str, Any], marks: dict[str, float]) -> None:

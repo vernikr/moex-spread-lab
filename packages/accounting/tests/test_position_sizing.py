@@ -202,6 +202,21 @@ class FundedSizingTests(unittest.TestCase):
                     with self.assertRaises(W0Error):
                         size_proof(unit, marks, ResearchSettings(), {})
 
+    def test_the_stress_note_follows_the_buffer_constants(self):
+        from unittest.mock import patch
+
+        from moex_spread_lab.accounting import position_sizing
+
+        with (
+            patch.object(position_sizing, "DEFAULT_STRESS_VM_BUFFER", 7000.0),
+            patch.object(position_sizing, "DEFAULT_UNCERTAINTY_BUFFER", 9000.0),
+        ):
+            proof, marks, contracts = unit_proof()
+            sized = size_proof(proof, marks, ResearchSettings(), contracts)
+        note = next(n for n in sized["notes"] if "VM-буфер" in n)
+        self.assertIn("VM-буфер 7 000 ₽", note)
+        self.assertIn("буфер неопределённости 9 000 ₽", note)
+
     def test_a_missing_exit_mark_fails_closed(self):
         for metrics_only in (False, True):
             with self.subTest(metrics_only=metrics_only):

@@ -499,6 +499,26 @@ def test_carry_study_observations_reach_the_account_risk_screen(tmp_path: Path) 
     )
 
 
+def test_account_risk_cli_defaults_come_from_the_constants() -> None:
+    from moex_spread_lab.accounting.account_risk import (
+        DEFAULT_INITIAL_CAPITAL,
+        DEFAULT_KEY_RATE,
+        DEFAULT_STRESS_VM_BUFFER,
+        DEFAULT_UNCERTAINTY_BUFFER,
+    )
+
+    parser = argparse.ArgumentParser()
+    commands = parser.add_subparsers(dest="command")
+    register_accounting_cli(commands)
+    args = parser.parse_args(
+        ["account-risk-check", "--contracts", "contracts.json", "--output", "risk.json"]
+    )
+    assert args.initial_capital == DEFAULT_INITIAL_CAPITAL
+    assert args.stress_vm_buffer == DEFAULT_STRESS_VM_BUFFER
+    assert args.uncertainty_buffer == DEFAULT_UNCERTAINTY_BUFFER
+    assert args.key_rate == DEFAULT_KEY_RATE
+
+
 def test_accounting_manifest_exposes_only_live_contracts() -> None:
     manifest = json.loads((Path(__file__).parents[1] / "manifest.json").read_text(encoding="utf-8"))
     assert set(manifest["capabilities"]) == {

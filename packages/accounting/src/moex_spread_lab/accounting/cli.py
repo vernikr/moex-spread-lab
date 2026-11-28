@@ -8,6 +8,13 @@ from typing import Any, cast
 
 from moex_spread_lab.core.w0 import W0Error, write_json
 
+from .account_risk import (
+    DEFAULT_INITIAL_CAPITAL,
+    DEFAULT_KEY_RATE,
+    DEFAULT_STRESS_VM_BUFFER,
+    DEFAULT_UNCERTAINTY_BUFFER,
+)
+
 
 def register(subparsers: Any) -> None:
     account_risk_parser = subparsers.add_parser(
@@ -18,10 +25,16 @@ def register(subparsers: Any) -> None:
     account_risk_parser.add_argument("--contracts", type=Path, required=True)
     account_risk_parser.add_argument("--carry-study", type=Path)
     account_risk_parser.add_argument("--output", type=Path, required=True)
-    account_risk_parser.add_argument("--initial-capital", type=float, default=30000.0)
-    account_risk_parser.add_argument("--stress-vm-buffer", type=float, default=5000.0)
-    account_risk_parser.add_argument("--uncertainty-buffer", type=float, default=5000.0)
-    account_risk_parser.add_argument("--key-rate", type=float, default=0.14)
+    account_risk_parser.add_argument(
+        "--initial-capital", type=float, default=DEFAULT_INITIAL_CAPITAL
+    )
+    account_risk_parser.add_argument(
+        "--stress-vm-buffer", type=float, default=DEFAULT_STRESS_VM_BUFFER
+    )
+    account_risk_parser.add_argument(
+        "--uncertainty-buffer", type=float, default=DEFAULT_UNCERTAINTY_BUFFER
+    )
+    account_risk_parser.add_argument("--key-rate", type=float, default=DEFAULT_KEY_RATE)
     account_risk_parser.set_defaults(_msl_cli_handler=_run_account_risk_cmd)
 
 

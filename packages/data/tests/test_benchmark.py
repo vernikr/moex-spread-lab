@@ -127,6 +127,67 @@ def test_lineage_marks_proxy_and_observed_periods():
     assert "synthetic_proxy" in {row["source_kind"] for row in result["rows"]}
 
 
+def test_lineage_compounds_each_source_span_once_and_does_not_invent_middle_mark():
+    sources = {
+        "LQDT": [observed("LQDT", "2024-01-01", 100), observed("LQDT", "2024-01-03", 110)],
+        "FXMM": [
+            observed("FXMM", "2024-01-01", 100),
+            observed("FXMM", "2024-01-02", 105),
+            observed("FXMM", "2024-01-03", 110),
+        ],
+    }
+    result = build_lineage(sources)
+    assert [(row["date"], row["price"]) for row in result["rows"]] == [
+        ("2024-01-01", pytest.approx(100.0)),
+        ("2024-01-03", pytest.approx(110.0)),
+    ]
+    assert result["omitted_interior_dates"] == ["2024-01-02"]
+
+
+def test_lineage_uses_nonoverlapping_returns_across_source_transitions():
+    sources = {
+        "LQDT": [observed("LQDT", "2024-01-02", 100), observed("LQDT", "2024-01-04", 110)],
+        "FXMM": [
+            observed("FXMM", f"2024-01-0{i}", value)
+            for i, value in enumerate((95, 100, 105, 110), 1)
+        ],
+    }
+    rows = build_lineage(sources)["rows"]
+    assert [row["date"] for row in rows] == ["2024-01-01", "2024-01-02", "2024-01-04"]
+    assert [row["price"] for row in rows] == pytest.approx([95, 100, 110])
+    assert rows[0]["source_kind"] == "synthetic_proxy"
+    assert rows[1]["source_kind"] == "observed"
+
+
+def test_lineage_falls_back_to_valid_lower_ranked_interval():
+    sources = {
+        "LQDT": [observed("LQDT", "2024-01-01", 100), observed("LQDT", "2024-01-02", 150)],
+        "FXMM": [observed("FXMM", "2024-01-01", 100), observed("FXMM", "2024-01-02", 110)],
+    }
+    result = build_lineage(sources)
+    assert result["rows"][0]["price"] == pytest.approx(150 / 1.1)
+    assert result["rows"][0]["source_kind"] == "synthetic_proxy"
+    assert result["omitted_interior_dates"] == []
+
+
+def test_lineage_refuses_disconnected_or_invalid_return_spans():
+    sources = {
+        "LQDT": [observed("LQDT", "2024-01-01", 100), observed("LQDT", "2024-01-03", 150)],
+        "FXMM": [observed("FXMM", "2024-01-01", 100), observed("FXMM", "2024-01-02", 105)],
+    }
+    with pytest.raises(BenchmarkError, match="cannot link benchmark"):
+        build_lineage(sources)
+
+
+def test_lineage_refuses_to_skip_higher_priority_observation():
+    sources = {
+        "LQDT": [observed("LQDT", "2024-01-02", 105)],
+        "FXMM": [observed("FXMM", "2024-01-01", 100), observed("FXMM", "2024-01-03", 110)],
+    }
+    with pytest.raises(BenchmarkError, match="higher-ranked"):
+        build_lineage(sources)
+
+
 def test_moex_history_paginates_and_preserves_board(monkeypatch):
     calls = []
     columns = ["BOARDID", "TRADEDATE", "LEGALCLOSEPRICE", "CLOSE", "WAPRICE"]

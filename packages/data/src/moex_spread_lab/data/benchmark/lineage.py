@@ -88,7 +88,7 @@ def adjust_vtbm_split(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _daily_returns(sources: dict[str, list[dict[str, Any]]]) -> dict[str, dict[str, Any]]:
-    """Daily return per date from the highest-ranked source; |r| >= 20% breaks are skipped."""
+    """Highest-ranked valid return ending on each date, with its actual start date."""
     returns: dict[str, dict[str, Any]] = {}
     for ticker in CHAIN:
         for previous, current in itertools.pairwise(sources.get(ticker, [])):
@@ -96,12 +96,16 @@ def _daily_returns(sources: dict[str, list[dict[str, Any]]]) -> dict[str, dict[s
                 continue
             ret = float(current["price"]) / float(previous["price"]) - 1
             if abs(ret) < 0.2:
-                returns[current["date"]] = {"return": ret, "source_ticker": ticker}
+                returns[current["date"]] = {
+                    "start": previous["date"],
+                    "return": ret,
+                    "source_ticker": ticker,
+                }
     return returns
 
 
 def build_lineage(raw_sources: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
-    """Stitch the chain backwards from the latest price using the best daily return per date."""
+    """Stitch backwards using complete, nonoverlapping source return intervals."""
     sources = {
         ticker: sorted(rows, key=lambda row: row["date"])
         for ticker, rows in raw_sources.items()
@@ -120,14 +124,26 @@ def build_lineage(raw_sources: dict[str, list[dict[str, Any]]]) -> dict[str, Any
     )
     price, ticker = float(latest["price"]), str(latest["source_ticker"])
     prices = [_price_row(latest["date"], price, ticker)]
-    for current_date in reversed(all_dates[:-1]):
-        ret_info = returns.get(str(prices[-1]["date"]))
+    omitted: list[str] = []
+    index = len(all_dates) - 1
+    while index > 0:
+        end = all_dates[index]
+        ret_info = returns.get(end)
         if ret_info is None:
-            ticker = available.get(current_date, "holiday_or_missing_return")
-        else:
-            price /= 1 + float(ret_info["return"])
-            ticker = str(ret_info["source_ticker"])
-        prices.append(_price_row(current_date, price, ticker))
+            raise BenchmarkError(f"cannot link benchmark return ending {end}")
+        ticker = str(ret_info["source_ticker"])
+        start = str(ret_info["start"])
+        index -= 1
+        while all_dates[index] > start:
+            skipped = all_dates[index]
+            if RANK.get(available.get(skipped, ""), -1) > RANK[ticker]:
+                raise BenchmarkError(
+                    f"higher-ranked observation at {skipped} inside {start} to {end}"
+                )
+            omitted.append(skipped)
+            index -= 1
+        price /= 1 + float(ret_info["return"])
+        prices.append(_price_row(start, price, ticker))
     prices.reverse()
     observed_start = min(
         (str(row["date"]) for ticker in OBSERVED for row in sources.get(ticker, [])), default=None
@@ -140,6 +156,7 @@ def build_lineage(raw_sources: dict[str, list[dict[str, Any]]]) -> dict[str, Any
         "extended_start": prices[0]["date"],
         "extended_end": prices[-1]["date"],
         "rows": prices,
+        "omitted_interior_dates": sorted(omitted),
         "source_rows": {ticker: len(rows) for ticker, rows in sources.items()},
         "interpretation": {
             "observed": "VTBM/LQDT exchange price observations",

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
+from moex_spread_lab.core.contracts import WindowSnapshot
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data import universe as data_universe
 from moex_spread_lab.strategies import discover_strategies
@@ -18,6 +19,7 @@ from moex_spread_lab.strategies.calendar.calendar_spreads import (
     stress_ok,
 )
 from moex_spread_lab.strategies.calendar.data_cache import slice_window_through
+from moex_spread_lab.strategies.calendar.intents import calendar_intent_trades
 from moex_spread_lab.strategies.calendar.proof_payload import build_proof_payload
 from moex_spread_lab.strategies.calendar.proof_runner import (
     _build_h1_eligible_rows,
@@ -496,6 +498,36 @@ class ProofPayloadTests(unittest.TestCase):
             ref["lqdt_on_pair_margin_while_open_rub"],
             pub["lqdt_on_pair_margin_while_open_rub"],
         )
+
+    def test_trailing_zero_volume_daily_bar_preserves_terminal_intent_invariants(self):
+        zplug = discover_strategies().get("zscore_mean_reversion")
+        params = {"window": 7, "entry_z": 1.5, "exit_z": 0.5}
+        for spike_start in (9, 10):
+            rows = [
+                {
+                    "date": f"2026-01-{d:02d}",
+                    "spread": 10.0 + (0.1 if d % 2 == 0 else -0.1) if d < spike_start else 25.0,
+                    "open_spread": 10.0 + (0.1 if d % 2 == 0 else -0.1)
+                    if d < spike_start
+                    else 25.0,
+                    "min_volume": 200.0 if d < 12 else 0.0,
+                    "days_to_near_expiry": 30 - d,
+                    "dividend_in_window": False,
+                }
+                for d in range(1, 13)
+            ]
+            snap = WindowSnapshot(
+                universe="calendar_native",
+                pair="SRH6/SRM6",
+                asset="SR",
+                timeframe="1d",
+                rows=tuple(rows),
+                extra={"monthly": True},
+            )
+            trades = calendar_intent_trades(zplug, snap, params, "next_open")
+            self.assertEqual(len(trades), 1)
+            self.assertEqual(trades[0]["reason"], "end_of_window")
+            self.assertEqual(trades[0]["exit"]["date"], "2026-01-12")
 
     def test_execute_calendar_proof_honors_threshold_pp_and_rejects_bad_params(self):
         days = [f"2026-01-{day:02d}" for day in range(1, 28)]

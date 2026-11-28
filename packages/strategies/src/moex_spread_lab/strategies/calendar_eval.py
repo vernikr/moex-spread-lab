@@ -23,6 +23,7 @@ from .base import (
     CALENDAR_FILLS,
     PRICE_FILLS,
     ZSCORE_CALENDAR_OPTIONS,
+    calendar_price,
     check_calendar_liquidity,
     validate_parameter_map,
 )
@@ -149,10 +150,23 @@ def calendar_evaluate_intents(
     rows = (
         list(window.rows)
         if window.timeframe == "1h"
-        else [a for a in window.rows if (a.get("min_volume") or 0) > 0]
+        else [r for r in window.rows if (r.get("min_volume") or 0) > 0]
     )
     e = CalendarScan(window, rows, a, delay, quote, monthly)
-    return calendar_intent_run(plugin.strategy_id, fill, a, window.rows, plugin.scan_trades(e))
+    trades = list(plugin.scan_trades(e))
+    if (
+        trades
+        and window.rows
+        and (trades[-1].get("reason") or "end_of_window") == "end_of_window"
+        and trades[-1]["exit"]["date"] != window.rows[-1]["date"]
+    ):
+        final_row = window.rows[-1]
+        trades[-1] = {
+            **trades[-1],
+            "exit": final_row,
+            "exit_price": calendar_price(final_row, quote),
+        }
+    return calendar_intent_run(plugin.strategy_id, fill, a, window.rows, trades)
 
 
 def calendar_entry_bands(

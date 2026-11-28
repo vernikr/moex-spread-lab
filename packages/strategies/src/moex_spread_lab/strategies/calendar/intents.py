@@ -78,6 +78,20 @@ def _validate_calendar_intent(
     }
 
 
+def _prepare_verifier_rows(window: WindowSnapshot) -> list[dict[str, Any]]:
+    if window.timeframe == "1h":
+        return [dict(r) for r in window.rows]
+    out: list[dict[str, Any]] = []
+    for src in window.rows:
+        row = dict(src)
+        if "min_volume" in row and (row.get("min_volume") or 0) <= 0:
+            row["signal_eligible"] = False
+            row["entry_eligible"] = False
+            row["exit_eligible"] = False
+        out.append(row)
+    return out
+
+
 def calendar_intent_trades(
     plugin: StrategyPlugin, window: WindowSnapshot, params: dict[str, Any], fill: str
 ) -> list[dict[str, Any]]:
@@ -88,7 +102,7 @@ def calendar_intent_trades(
         or fill not in plugin.supported_fills
     ):
         raise W0Error("Неподдерживаемая вселенная или исполнение плагина.")
-    rows = list(window.rows)
+    rows = _prepare_verifier_rows(window)
     _, lookup = build_date_index(
         rows, "Окно плагина должно содержать уникальные упорядоченные даты."
     )

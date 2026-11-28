@@ -165,6 +165,38 @@ def test_lqdt_overlay_does_not_finance_a_deficit_at_the_benchmark_rate() -> None
     assert recovered.max_deficit == pytest.approx(90.0)
 
 
+@pytest.mark.parametrize(
+    ("capital", "pnl", "margins", "prices", "message"),
+    [
+        (100.0, [0, 1, 2], [0, 0], [1, 1, 1], "align row by row"),
+        (100.0, [0], [0, 0, 0], [1, 1, 1], "align row by row"),
+        (100.0, [0, 1, 2], [0, 0, 0], [1, 0, 1], "benchmark prices must be >"),
+        (100.0, [0, float("nan")], [0, 0], [1, 1], "cumulative pnl must be finite"),
+        (100.0, [0, float("inf")], [0, 0], [1, 1], "cumulative pnl must be finite"),
+        (100.0, [0, 1], [0, -1], [1, 1], "margins must be >= 0.0"),
+        (0.0, [0], [0], [1], "capital must be a finite positive"),
+        (-5.0, [0], [0], [1], "capital must be a finite positive"),
+        (float("nan"), [0], [0], [1], "capital must be a finite positive"),
+        (100.0, [], [], [], "cannot be empty"),
+    ],
+)
+def test_lqdt_overlay_validates_its_inputs(
+    capital: float,
+    pnl: list[float],
+    margins: list[float],
+    prices: list[float],
+    message: str,
+) -> None:
+    with pytest.raises(W0Error, match=message):
+        lqdt_overlay_values(capital, pnl, margins, prices)
+
+
+def test_lqdt_overlay_accepts_a_negative_cumulative_pnl() -> None:
+    overlay = lqdt_overlay_values(100.0, [0, -5, -10], [0, 0, 0], [1, 1.1, 1.21])
+    assert overlay.values == pytest.approx([100.0, 105.0, 110.5])
+    assert overlay.shortfall_rows == 0
+
+
 def test_ebs_charge_and_validation() -> None:
     assert ebs_undercovered_margin_charge(12000.0, 10000.0, key_rate=0.14, days=5) == pytest.approx(
         2000.0 * 0.16 * 5 / 365.0

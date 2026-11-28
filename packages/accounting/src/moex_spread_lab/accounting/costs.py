@@ -7,6 +7,7 @@ unevidenced, so pricing fails closed instead of charging zero.
 
 from __future__ import annotations
 
+import math
 from datetime import date
 from typing import Any, NamedTuple, cast
 
@@ -158,6 +159,44 @@ class LqdtOverlay(NamedTuple):
     max_deficit: float
 
 
+def _overlay_series(
+    name: str, series: object, *, minimum: float | None = None, strict: bool = False
+) -> list[float]:
+    if not isinstance(series, list) or not series:
+        raise W0Error(f"LQDT overlay {name} cannot be empty")
+    values: list[float] = []
+    for value in cast(list[Any], series):
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise W0Error(f"LQDT overlay {name} must be finite numbers")
+        if not math.isfinite(value):
+            raise W0Error(f"LQDT overlay {name} must be finite numbers")
+        if minimum is not None and (value <= minimum if strict else value < minimum):
+            raise W0Error(f"LQDT overlay {name} must be {'>' if strict else '>='} {minimum}")
+        values.append(float(value))
+    return values
+
+
+def _overlay_inputs(
+    capital: object,
+    cumulative_pnl: object,
+    margins: object,
+    benchmark_prices: object,
+) -> tuple[float, list[float], list[float], list[float]]:
+    if (
+        not isinstance(capital, (int, float))
+        or isinstance(capital, bool)
+        or not math.isfinite(capital)
+        or capital <= 0
+    ):
+        raise W0Error("LQDT overlay capital must be a finite positive RUB amount")
+    pnl = _overlay_series("cumulative pnl", cumulative_pnl)
+    held = _overlay_series("margins", margins, minimum=0.0)
+    prices = _overlay_series("benchmark prices", benchmark_prices, minimum=0.0, strict=True)
+    if not len(pnl) == len(held) == len(prices):
+        raise W0Error("LQDT overlay series must align row by row")
+    return float(capital), pnl, held, prices
+
+
 def lqdt_overlay_values(
     capital: float,
     cumulative_pnl: list[float],
@@ -170,7 +209,9 @@ def lqdt_overlay_values(
     earns no benchmark return and is reported as a deficit so the caller can
     reject the run instead of letting the shortfall compound like a loan.
     """
-    free = capital
+    free, cumulative_pnl, margins, benchmark_prices = _overlay_inputs(
+        capital, cumulative_pnl, margins, benchmark_prices
+    )
     values: list[float] = []
     shortfall_rows = 0
     first_shortfall_index: int | None = None

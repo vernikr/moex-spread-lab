@@ -382,6 +382,28 @@ class WebHttpRoutesTests(unittest.TestCase):
         for ok_path in ("/api/timeframes", "/api/settings"):
             self.assertEqual(self._request("GET", ok_path)[0], 200, ok_path)
 
+    def test_spoofed_loopback_host_from_a_remote_peer_is_rejected(self) -> None:
+        """#350: the `Host` header alone must not admit a non-loopback peer."""
+        handler_cls = web_server.make_handler(web_server.ScreenerStore(ScreenerInputs(Path.cwd())))
+        handler = object.__new__(handler_cls)
+        handler.headers = {"Host": "127.0.0.1:8765"}
+        handler.server = SimpleNamespace(server_port=8765)
+        for peer, admitted in (
+            (("127.0.0.1", 50000), True),
+            (("::1", 50000), True),
+            (("::ffff:127.0.0.1", 50000), True),
+            (("203.0.113.7", 50000), False),
+            (("127.0.0.1.attacker.example", 50000), False),
+            ("not-an-address", False),
+        ):
+            handler.client_address = peer
+            self.assertEqual(handler.local_request(), admitted, peer)
+        handler.headers = {"Host": "preview.example"}
+        handler.client_address = ("203.0.113.7", 50000)
+        self.assertFalse(handler.local_request())
+        with mock.patch.dict("os.environ", {"MSL_ALLOWED_HOSTS": "preview.example"}):
+            self.assertTrue(handler.local_request())
+
     def test_allowed_preview_host_posts_over_plain_http(self) -> None:
         """#351: `MSL_ALLOWED_HOSTS` hosts must not be restricted to https by `local_origin`."""
         with mock.patch.dict("os.environ", {"MSL_ALLOWED_HOSTS": PREVIEW}):

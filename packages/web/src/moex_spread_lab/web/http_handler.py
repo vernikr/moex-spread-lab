@@ -7,6 +7,7 @@ detection; route modules decide *what* to answer.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import select
@@ -128,17 +129,32 @@ class LoopbackHandler(BaseHTTPRequestHandler):
         """The bound loopback port; `BaseServer` does not declare it."""
         return getattr(self.server, "server_port", 0)
 
+    def local_peer(self) -> bool:
+        """Whether the TCP peer is loopback, not merely a client-chosen `Host` header."""
+        peer = self.client_address[0]
+        if peer in {"127.0.0.1", "::1"}:
+            return True
+        try:
+            return ipaddress.ip_address(peer).is_loopback
+        except ValueError:
+            return False
+
+    def loopback_host(self) -> bool:
+        port = self.server_port()
+        return _header_token(self.headers.get("Host")) in {f"127.0.0.1:{port}", f"localhost:{port}"}
+
     def local_request(self) -> bool:
         """Loopback by default; `MSL_ALLOWED_HOSTS` is an explicit preview/proxy opt-in only.
 
-        The bind address stays `127.0.0.1`; a cloud-agent preview opts in with the exact preview
-        hostname (or `*`) and the API keeps rejecting every other Host.
+        A loopback `Host` is client-controlled, so it is admitted only from a loopback peer: a
+        server bound to `0.0.0.0` would otherwise serve its whole API to anyone sending
+        `Host: 127.0.0.1:<port>`. A preview host is reached *through* a proxy, so its admission
+        rests on the exact `MSL_ALLOWED_HOSTS` name instead of the peer address.
         """
-        host = _header_token(self.headers.get("Host"))
-        port = self.server_port()
-        allowed = {f"127.0.0.1:{port}", f"localhost:{port}"}
         extra = _allowed_hosts_env()
-        return "*" in extra or host in allowed or host in extra
+        if "*" in extra or _header_token(self.headers.get("Host")) in extra:
+            return True
+        return self.loopback_host() and self.local_peer()
 
     def local_origin(self) -> bool:
         origin = self.headers.get("Origin")
@@ -158,11 +174,10 @@ class LoopbackHandler(BaseHTTPRequestHandler):
     def local_dev_request(self) -> bool:
         """Development endpoints never inherit preview-host opt-ins."""
         port = self.server_port()
-        host = _header_token(self.headers.get("Host"))
         origin = self.headers.get("Origin")
         return (
-            self.client_address[0] in {"127.0.0.1", "::1"}
-            and host in {f"127.0.0.1:{port}", f"localhost:{port}"}
+            self.local_peer()
+            and self.loopback_host()
             and (
                 origin is None
                 or _header_token(origin) in {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}

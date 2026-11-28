@@ -41,7 +41,11 @@ Disconnected clients cancel expensive work. Concurrent searches receive HTTP 409
 
 - The CLI binds `127.0.0.1` by default. `MSL_ALLOWED_HOSTS` accepts exact
   comma-separated preview/proxy hosts or `*`; it controls Host/Origin admission,
-  not the bind address or authentication. Development routes additionally require
+  not the bind address or authentication. A loopback `Host` (`127.0.0.1`,
+  `localhost`, any loopback literal) is accepted only from a loopback peer, so
+  binding `0.0.0.0` does not expose the API to a client that spoofs the header;
+  a preview host is admitted by its allowlist name alone because the request
+  arrives through the proxy. Development routes additionally require
   a loopback peer, local Host and absent/local Origin, regardless of preview opt-ins.
 - Responses use `no-store`, `nosniff` and CSP. Scripts and connections are
   same-origin; objects and framing are forbidden.

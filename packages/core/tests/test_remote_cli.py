@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import platform
+import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -231,6 +236,44 @@ def test_sync_is_a_no_op_when_head_is_already_at_origin(monkeypatch, tmp_path):
 )
 def test_runtime_path_classification(path, runtime):
     assert workstation_remote._is_runtime_path(path) is runtime
+
+
+def _pre310_interpreter() -> str | None:
+    for name in ("python3.9", "python3.8"):
+        if path := shutil.which(name):
+            return path
+    system = Path("/usr/bin/python3")
+    if platform.system() == "Darwin" and system.is_file():
+        version = subprocess.run(
+            [str(system), "--version"], capture_output=True, text=True, check=True
+        ).stdout.split()
+        if version[:2] == ["Python", "3"] and int(version[2].split(".")[0]) < 10:
+            return str(system)
+    return None
+
+
+@pytest.mark.skipif(
+    _pre310_interpreter() is None, reason="no pre-3.10 interpreter to prove the transport"
+)
+def test_transported_workstation_source_imports_on_a_pre310_interpreter():
+    # The client transports this file as `python3 -c "<base64 code>"`, and the
+    # bridge resolves that to the macOS system 3.9: annotations must stay
+    # unevaluated or the sync dies before any action runs (issue #326).
+    source = Path(workstation_remote.__file__).read_bytes()
+    encoded = base64.b64encode(source).decode("ascii")
+    script = (
+        "import base64\n"
+        f"exec(compile(base64.b64decode('{encoded}'), '<workstation>', 'exec'),"
+        " {'__name__': 'workstation_transport'})\n"
+        "print('imported')"
+    )
+    interpreter = _pre310_interpreter()
+    assert interpreter is not None
+    result = subprocess.run(
+        [interpreter, "-c", script], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "imported"
 
 
 def test_await_readiness_requires_matching_head_and_is_bounded(monkeypatch, tmp_path):

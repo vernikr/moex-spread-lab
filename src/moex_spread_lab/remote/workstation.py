@@ -1,4 +1,11 @@
-"""Workstation-side actions transported by the authenticated bridge client."""
+"""Workstation-side actions transported by the authenticated bridge client.
+
+Annotations stay unevaluated: the bridge `/exec` environment resolves a bare
+``python3`` to the macOS system interpreter (3.9), so PEP-604 unions in this
+transported file must never execute at import time.
+"""
+
+from __future__ import annotations
 
 import json
 import os

@@ -240,31 +240,62 @@ def load_contracts(
     return selected, digest
 
 
+SCAN_EXCLUDED_DIRS = frozenset({".git", ".venv", "__pycache__", ".opencode", "node_modules"})
+SCAN_MAX_FILE_BYTES = 5 * 1024 * 1024
+
+
 def iter_scan_files(root: Path) -> Iterable[Path]:
-    excluded = {".git", ".venv", "__pycache__", ".opencode", "node_modules"}
-    for path in sorted(root.rglob("*")):
-        if not path.is_file() or any(part in excluded for part in path.parts):
-            continue
-        yield path
+    root = Path(root)
+    if not root.is_dir():
+        raise W0Error(f"secret-scan root does not exist or is not a directory: {root}")
+    # Prune excluded directories instead of walking them; the filter compares
+    # parts relative to root, so a root living under e.g. node_modules still scans.
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = sorted(d for d in dirnames if d not in SCAN_EXCLUDED_DIRS)
+        base = Path(dirpath)
+        for name in sorted(filenames):
+            yield base / name
 
 
-def scan_secrets(root: Path, *, tracked_only: bool = False) -> list[dict[str, str]]:
+def _scan_relpath(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
+def scan_secrets_detailed(root: Path, *, tracked_only: bool = False) -> dict[str, Any]:
+    root = Path(root)
     findings: list[dict[str, str]] = []
+    skipped: list[dict[str, Any]] = []
     paths = git_tracked_files(root) if tracked_only else iter_scan_files(root)
     for path in paths:
-        if not path.is_file() or path.stat().st_size > 5 * 1024 * 1024:
+        rel = _scan_relpath(path, root)
+        try:
+            size = path.stat().st_size
+        except OSError as exc:
+            skipped.append({"path": rel, "reason": f"cannot stat: {exc.strerror or exc}"})
+            continue
+        if not path.is_file():
+            continue
+        if size > SCAN_MAX_FILE_BYTES:
+            skipped.append({"path": rel, "reason": "file-too-large", "size": size})
             continue
         try:
             content = path.read_bytes()
-        except OSError:
+        except OSError as exc:
+            skipped.append({"path": rel, "reason": f"cannot read: {exc.strerror or exc}"})
             continue
         for pattern in SECRET_PATTERNS:
             match = pattern.search(content)
             if match:
-                findings.append(
-                    {"path": str(path.relative_to(root)), "pattern": pattern.pattern.decode()}
-                )
-    return findings
+                findings.append({"path": rel, "pattern": pattern.pattern.decode()})
+    return {"findings": findings, "skipped": skipped}
+
+
+def scan_secrets(root: Path, *, tracked_only: bool = False) -> list[dict[str, str]]:
+    report = scan_secrets_detailed(root, tracked_only=tracked_only)
+    return cast(list[dict[str, str]], report["findings"])
 
 
 def git_tracked_files(root: Path) -> list[Path]:

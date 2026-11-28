@@ -9,6 +9,7 @@ from moex_spread_lab.core.w0 import (
     load_contracts,
     run_id,
     scan_secrets,
+    scan_secrets_detailed,
     write_json,
 )
 
@@ -95,6 +96,27 @@ class W0Tests(unittest.TestCase):
             with self.assertRaises(W0Error) as ctx:
                 load_contracts(path, "NEAR", "FAR")
             self.assertIn("must be a finite number", str(ctx.exception))
+
+    def test_secret_scan_missing_root_raises(self):
+        with tempfile.TemporaryDirectory() as directory, self.assertRaises(W0Error):
+            scan_secrets(Path(directory) / "does-not-exist")
+
+    def test_secret_scan_root_under_excluded_dir_name_is_scanned(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "node_modules" / "proj"
+            root.mkdir(parents=True)
+            (root / "k.txt").write_text("ghp_" + "a" * 30, encoding="utf-8")
+            self.assertTrue(scan_secrets(root))
+
+    def test_secret_scan_reports_large_skipped_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            big = Path(directory) / "big.bin"
+            big.write_bytes(b"ghp_" + b"a" * 36 + b"\n" + b"x" * (5 * 1024 * 1024))
+            report = scan_secrets_detailed(Path(directory))
+            self.assertEqual(report["findings"], [])
+            self.assertEqual(len(report["skipped"]), 1)
+            self.assertEqual(report["skipped"][0]["reason"], "file-too-large")
+            self.assertEqual(report["skipped"][0]["path"], "big.bin")
 
     def test_secret_scan_tracked_only_outside_git_repo_raises(self):
         with tempfile.TemporaryDirectory() as directory:

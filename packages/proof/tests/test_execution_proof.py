@@ -1,9 +1,10 @@
 import json
 import unittest
 
+from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.proof.service import ProofService
 from perf_equivalence_fixtures import temporary_workspace
-from workspace_fixtures import build_pair_root
+from workspace_fixtures import END, START, build_pair_root
 
 MEAN_REVERSION_REQUEST = {
     "universe": "pair_screen",
@@ -132,6 +133,43 @@ class ExecutionProofTests(unittest.TestCase):
         self.assertEqual(first["run_id"], self.proof.proof(base)["run_id"])
         other = self.proof.proof({**base, "slippage_ticks": 2.0})
         self.assertNotEqual(first["run_id"], other["run_id"])
+
+    def test_carry_auto_sizing_preserves_sub_kopeck_unit_funding(self):
+        cache_path = self.root / "data/carry-history-cache" / f"CNYRUBF-{START}-{END}-0.json"
+        doc = json.loads(cache_path.read_text())
+        sr_idx = doc["payload"]["history"]["columns"].index("SWAPRATE")
+        for row in doc["payload"]["history"]["data"]:
+            row[sr_idx] = 0.000004
+        cache_path.write_text(json.dumps(doc))
+        settings = ResearchSettings(initial_capital_rub=100_000.0)
+        auto_req = {
+            "universe": "pair_screen",
+            "pair": "CNYRUBF/CRZ6",
+            "strategy": "funding_only",
+            "sizing": "max_affordable",
+            "initial_capital_rub": 100_000.0,
+            "slippage_ticks": 1.0,
+            "parameters": {"lookback": 10},
+        }
+        prep_auto = self.proof.prepare(auto_req, settings=settings)
+        auto_res = prep_auto(auto_req, metrics_only=False)
+        fast_res = prep_auto(auto_req, metrics_only=True)
+        qty = auto_res["trades"][0]["quantity"]
+        fixed_req = {**auto_req, "quantity": qty}
+        fixed_req.pop("sizing")
+        fixed_res = self.proof.prepare(fixed_req, settings=settings)(fixed_req)
+        auto_fund = round(sum(r["funding_rub"] or 0 for r in auto_res["ledger"]), 2)
+        fixed_fund = round(sum(r["funding_rub"] or 0 for r in fixed_res["ledger"]), 2)
+        self.assertGreater(auto_fund, 0.0)
+        self.assertEqual(auto_fund, fixed_fund)
+        self.assertEqual(
+            [r["funding_rub"] for r in auto_res["series"]],
+            [r["funding_rub"] for r in fixed_res["series"]],
+        )
+        self.assertEqual(
+            auto_res["ledger"][-1]["cumulative_net_rub"],
+            fast_res["ledger"][-1]["cumulative_net_rub"],
+        )
 
 
 if __name__ == "__main__":

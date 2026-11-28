@@ -130,6 +130,7 @@ def _series_rows(state: CarryWindowState, report: dict[str, Any]) -> list[dict[s
     quantity = int(spec.execution["quantity"])
     near = spec.pair["near"]
     near_lot = float(spec.terms[near].get("lot_size") or 1.0)
+    funding_digits = 8 if spec.execution.get("sizing_intents") else 2
     marks = state.evidence.marks
     book_marks = state.funding_window.book.marks
     rows: list[dict[str, Any]] = []
@@ -155,7 +156,7 @@ def _series_rows(state: CarryWindowState, report: dict[str, Any]) -> list[dict[s
                 "spread_volume": None,
                 "spread_trades": None,
                 "days_to_near_expiry": None,
-                "funding_rub": round(row["daily_funding_included_rub"], 2),
+                "funding_rub": round(row["daily_funding_included_rub"], funding_digits),
                 "funding_swaprate_rub_per_unit": study_row.get("near_swaprate"),
                 "funding_lot_size": near_lot,
                 "funding_contracts": quantity if position else 0,

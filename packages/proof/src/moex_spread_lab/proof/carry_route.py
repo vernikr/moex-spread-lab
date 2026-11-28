@@ -262,7 +262,7 @@ def sizing_intent_payload(
             "spread": round(
                 row["near_settle"] * state.near_mult - row["far_settle"] * state.far_mult, 8
             ),
-            "funding_rub": round(row["daily_funding_included_rub"], 2),
+            "funding_rub": round(row["daily_funding_included_rub"], 8),
             "funding_contracts": quantity if row["position"] else 0,
         }
         for row in report["daily"]

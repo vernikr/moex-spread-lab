@@ -185,6 +185,41 @@ console.log(JSON.stringify({{
     assert all(abs(v) < 10 for v in clean if v is not None), clean
 
 
+@pytest.mark.skipif(not shutil.which("node"), reason="Node is optional")
+def test_ou60_normalization_pairs_only_adjacent_bars_across_gaps() -> None:
+    """#328: an AR(1) fit must not treat `raw[i-1] -> raw[i+g]` across a gap as a 1-step lag."""
+    script = f"""
+const mod = await import({json.dumps((_JS_DIR / "normalizations.js").as_uri())});
+const clean = [];
+let y = 5.0;
+for (let t = 0; t < 60; t++) {{
+  clean.push({{ spread_rel: y }});
+  y = 2.0 + 0.8 * (y - 2.0);
+}}
+const gapped = clean.map((r, i) => ([3, 17, 41].includes(i) ? {{ spread_rel: null }} : r));
+const negative = [];
+let v = 1.0;
+for (let t = 0; t < 40; t++) {{
+  negative.push({{ spread_rel: v }});
+  v = 0.5 - 0.5 * (v - 0.5);
+}}
+const negativeGapped = negative.map((r, i) => (i === 37 ? {{ spread_rel: null }} : r));
+console.log(JSON.stringify({{
+  truth: clean[59].spread_rel - 2.0,
+  gapFree: mod.spreadDisplayValues(clean, "ou60")[59],
+  gapped: mod.spreadDisplayValues(gapped, "ou60")[59],
+  negGapFree: mod.spreadDisplayValues(negative, "ou60")[39],
+  negGapped: mod.spreadDisplayValues(negativeGapped, "ou60")[39],
+}}));
+"""
+    out = _node_json(script)
+    # A gap must not move the equilibrium residual of a stationary series by an order of magnitude.
+    assert abs(out["gapFree"] - out["truth"]) < 1e-6, out
+    assert abs(out["gapped"] - out["truth"]) < 1e-3, out
+    # A negative-autocorrelation window keeps its sign and stays close to the gap-free fit.
+    assert out["negGapped"] < 0 and abs(out["negGapped"] - out["negGapFree"]) < 1e-2, out
+
+
 _LEDGER_SCRIPT = """
 const charts = await import($charts);
 const dom = await import($dom);

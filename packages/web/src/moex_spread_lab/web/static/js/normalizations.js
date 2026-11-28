@@ -189,15 +189,20 @@ function _computeSpreadValues(S, mode) {
       continue;
     }
     if (mode === 'ou60') {
-      const pts = winStats(60, t);
-      const k = pts.length;
-      if (k < 10) { out[t] = null; continue; }
+      const from = Math.max(0, t - 59);
+      const pts = raw.slice(from, t + 1).filter(v => v != null);
+      if (pts.length < 10) { out[t] = null; continue; }
       const m = mean(pts);
-      let sx = 0, sy = 0, sxy = 0, sxx = 0;
-      for (let i = 1; i < k; i++) {
-        sx += pts[i - 1]; sy += pts[i]; sxy += pts[i - 1] * pts[i]; sxx += pts[i - 1] * pts[i - 1];
+      // Only genuinely adjacent bars form AR(1) pairs: joining `raw[i - 1]` to `raw[i + g]`
+      // across a gap would pool `phi^(g+1)` transitions with 1-step ones and bias `phi`
+      // and the equilibrium `a / (1 - phi)`.
+      let sx = 0, sy = 0, sxy = 0, sxx = 0, cnt = 0;
+      for (let i = Math.max(1, from); i <= t; i++) {
+        if (raw[i] == null || raw[i - 1] == null) continue;
+        sx += raw[i - 1]; sy += raw[i]; sxy += raw[i - 1] * raw[i]; sxx += raw[i - 1] * raw[i - 1];
+        cnt++;
       }
-      const cnt = k - 1;
+      if (cnt < 9) { out[t] = cur - m; continue; }
       const vx = cnt * sxx - sx * sx;
       const phi = vx !== 0 ? (cnt * sxy - sx * sy) / vx : 0;
       const a = (sy - phi * sx) / cnt;

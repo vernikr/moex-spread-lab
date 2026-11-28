@@ -144,7 +144,8 @@ class CoreContractsTests(unittest.TestCase):
             plugin_ui_field_order(plugin, ("fallback",)), ("entry_z", "exit_z", "lookback")
         )
         self.assertEqual(plugin_required_asset_capability(plugin), "convergence")
-        self.assertEqual(plugin_trust_tier(plugin), "builtin")
+        # A self-declared tier is ignored: provenance comes from the implementation origin.
+        self.assertEqual(plugin_trust_tier(plugin), "plugin")
 
         class BarePlugin:
             pass
@@ -157,18 +158,24 @@ class CoreContractsTests(unittest.TestCase):
         self.assertEqual(plugin_trust_tier(bare), "plugin")
 
     def test_plugin_is_builtin_follows_implementation_origin(self) -> None:
-        from moex_spread_lab.core.contracts import plugin_is_builtin
+        from moex_spread_lab.core.contracts import plugin_is_builtin, plugin_trust_tier
 
         class Shipped:
             __module__ = "moex_spread_lab.strategies.demo.plugin"
             trust_tier = "plugin"
 
+        class Lookalike:
+            __module__ = "moex_spread_lab.strategies_evil.x"
+
         class DropIn:
             trust_tier = "builtin"
 
         self.assertTrue(plugin_is_builtin(cast(StrategyPlugin, Shipped())))
+        self.assertFalse(plugin_is_builtin(cast(StrategyPlugin, Lookalike())))
         # The declared tier alone cannot identify the engine: a drop-in may inherit it.
         self.assertFalse(plugin_is_builtin(cast(StrategyPlugin, DropIn())))
+        self.assertEqual(plugin_trust_tier(cast(StrategyPlugin, Lookalike())), "plugin")
+        self.assertEqual(plugin_trust_tier(cast(StrategyPlugin, DropIn())), "plugin")
 
 
 if __name__ == "__main__":

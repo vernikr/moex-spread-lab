@@ -214,10 +214,16 @@ _BUILTIN_PLUGIN_MODULE_PREFIX = "moex_spread_lab.strategies"
 
 def plugin_is_builtin(plugin: StrategyPlugin) -> bool:
     """True for engines shipped inside the strategies package."""
-    return type(plugin).__module__.startswith(_BUILTIN_PLUGIN_MODULE_PREFIX)
+    module = type(plugin).__module__
+    return module == _BUILTIN_PLUGIN_MODULE_PREFIX or module.startswith(
+        _BUILTIN_PLUGIN_MODULE_PREFIX + "."
+    )
 
 
 def plugin_trust_tier(plugin: StrategyPlugin) -> Literal["builtin", "plugin"]:
-    """Return the provenance tier declared by ``plugin``; unknown plugins count as third-party."""
-    tier = getattr(plugin, "trust_tier", None)
-    return "builtin" if tier == "builtin" else "plugin"
+    """Return the provenance tier from the plugin's implementation origin.
+
+    A self-declared ``trust_tier`` attribute is deliberately ignored: provenance
+    must not be able to overstate verification.
+    """
+    return "builtin" if plugin_is_builtin(plugin) else "plugin"

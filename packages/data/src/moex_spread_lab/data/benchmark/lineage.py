@@ -24,6 +24,8 @@ import certifi
 
 from moex_spread_lab.core.w0 import W0Error
 
+from ..iss.iss_http import decode_rows
+
 BENCHMARK_SCHEMA = "lqdt-lineage.v1"
 MOEX_BASE = "https://iss.moex.com"
 CBR_BASE = "https://www.cbr.ru"
@@ -203,19 +205,6 @@ def _request_json(url: str) -> tuple[dict[str, Any], str]:
     return cast(dict[str, Any], payload), digest
 
 
-def _table_rows(block: dict[str, Any], name: str) -> list[dict[str, Any]]:
-    columns = block.get("columns")
-    data = block.get("data")
-    if not isinstance(columns, list) or not isinstance(data, list):
-        raise BenchmarkError(f"invalid benchmark table: {name}")
-    typed_columns = cast(list[str], columns)
-    return [
-        dict(zip(typed_columns, cast(list[Any], row), strict=False))
-        for row in cast(list[Any], data)
-        if isinstance(row, list) and len(cast(list[Any], row)) == len(typed_columns)
-    ]
-
-
 def _fetch_iss_table(
     path: str, params: dict[str, Any], table: str, page_size: int, delay_seconds: float
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -226,7 +215,7 @@ def _fetch_iss_table(
         query = urlencode({"iss.meta": "off", **params, "start": page * page_size})
         payload, digest = _request_json(f"{MOEX_BASE}{path}.json?{query}")
         hashes.append(digest)
-        batch = _table_rows(payload.get(table, {}), table)
+        batch = decode_rows(payload.get(table, {}), table, error=BenchmarkError)
         rows.extend(batch)
         page += 1
         if len(batch) < page_size:

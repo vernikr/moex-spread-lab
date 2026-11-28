@@ -270,6 +270,43 @@ def test_lineage_refuses_to_skip_higher_priority_observation():
         build_lineage(sources)
 
 
+@pytest.mark.parametrize("table,size", [("history", 100), ("candles", 500)])
+@pytest.mark.parametrize("malformed", [["2020-01-01"], ["2020-01-01", 1, "extra"], None])
+def test_benchmark_iss_rejects_malformed_rows_on_full_page(monkeypatch, table, size, malformed):
+    calls = []
+
+    def request(url):
+        calls.append(int(parse_qs(urlparse(url).query)["start"][0]))
+        data = [["2020-01-01", 1] for _ in range(size)]
+        data[10] = malformed
+        return {table: {"columns": ["begin", "close"], "data": data}}, "hash"
+
+    monkeypatch.setattr(lineage, "_request_json", request)
+    with pytest.raises(BenchmarkError, match=rf"{table}\[10\]"):
+        if table == "history":
+            fetch_moex_history("VTBM", "2020-01-01", "2023-12-31", delay_seconds=0)
+        else:
+            lineage.fetch_rusfar_rates("2020-01-01", "2023-12-31", delay_seconds=0)
+    assert calls == [0]
+
+
+def test_rusfar_paginates_full_and_short_pages(monkeypatch):
+    calls = []
+
+    def request(url):
+        start = int(parse_qs(urlparse(url).query)["start"][0])
+        calls.append(start)
+        data = [[f"2020-01-01 {i:04}", 7.0] for i in range(500 if start == 0 else 2)]
+        return {"candles": {"columns": ["begin", "close"], "data": data}}, f"hash-{start}"
+
+    monkeypatch.setattr(lineage, "_request_json", request)
+    result = lineage.fetch_rusfar_rates("2020-01-01", "2020-12-31", delay_seconds=0)
+    assert calls == [0, 500]
+    assert result["page_count"] == 2
+    assert len(result["rows"]) == 502
+    assert result["raw_response_hashes"] == ["hash-0", "hash-500"]
+
+
 def test_moex_history_paginates_and_preserves_board(monkeypatch):
     calls = []
     columns = ["BOARDID", "TRADEDATE", "LEGALCLOSEPRICE", "CLOSE", "WAPRICE"]

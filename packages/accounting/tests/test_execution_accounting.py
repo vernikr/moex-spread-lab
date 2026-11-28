@@ -438,6 +438,67 @@ def test_accounting_cli_exposes_only_live_commands() -> None:
     assert exc.value.code == 2
 
 
+def test_carry_study_must_be_an_object_with_observations(tmp_path: Path) -> None:
+    from moex_spread_lab.accounting.cli import _carry_study_pnl
+
+    assert _carry_study_pnl(None) is None
+    cases = {
+        "list.json": "[1, 2]",
+        "no-rows.json": '{"schema_version": "carry.v1"}',
+        "rows-not-a-list.json": '{"rows": {"a": 1}}',
+        "empty-rows.json": '{"rows": []}',
+        "one-row.json": '{"rows": [{"daily_gross_carry_pnl": 5.0}]}',
+        "missing-field.json": '{"rows": [{"daily_gross_carry_pnl": 1.0}, {}]}',
+    }
+    for name, body in cases.items():
+        path = tmp_path / name
+        path.write_text(body, encoding="utf-8")
+        with pytest.raises(W0Error):
+            _carry_study_pnl(path)
+    good = tmp_path / "good.json"
+    good.write_text(
+        '{"rows": [{"daily_gross_carry_pnl": 1.0}, {"daily_gross_carry_pnl": -400.0}]}',
+        encoding="utf-8",
+    )
+    assert _carry_study_pnl(good) == [-400.0]
+
+
+def test_carry_study_observations_reach_the_account_risk_screen(tmp_path: Path) -> None:
+    from argparse import Namespace
+
+    from moex_spread_lab.accounting.cli import _run_account_risk_cmd
+
+    contracts = _contracts(tmp_path)
+    study = tmp_path / "study.json"
+    study.write_text(
+        '{"rows": [{"daily_gross_carry_pnl": 1.0}, {"daily_gross_carry_pnl": -400.0}]}',
+        encoding="utf-8",
+    )
+    output = tmp_path / "risk.json"
+    assert (
+        _run_account_risk_cmd(
+            Namespace(
+                contracts=contracts,
+                near="SBERF",
+                far="SRZ6",
+                carry_study=study,
+                output=output,
+                initial_capital=30000.0,
+                stress_vm_buffer=5000.0,
+                uncertainty_buffer=5000.0,
+                key_rate=0.14,
+            )
+        )
+        == 0
+    )
+    assert (
+        json.loads(output.read_text(encoding="utf-8"))["stress_inputs"][
+            "observed_worst_daily_loss_rub"
+        ]
+        == 400.0
+    )
+
+
 def test_accounting_manifest_exposes_only_live_contracts() -> None:
     manifest = json.loads((Path(__file__).parents[1] / "manifest.json").read_text(encoding="utf-8"))
     assert set(manifest["capabilities"]) == {

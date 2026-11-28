@@ -154,6 +154,60 @@ def test_lineage_marks_proxy_and_observed_periods():
     assert "synthetic_proxy" in {row["source_kind"] for row in result["rows"]}
 
 
+def test_lineage_anchors_to_latest_observed_price_and_reports_later_proxy_dates():
+    days = [f"2026-11-{day}" for day in range(24, 28)]
+    lqdt = [
+        observed("LQDT", day, price)
+        for day, price in zip(days, (2.1410, 2.1419, 2.1427), strict=False)
+    ]
+    rusfar = rate_rows_to_price([{"date": day, "rate": 14.0} for day in days], "RUSFAR")
+    result = build_lineage({"LQDT": lqdt, "RUSFAR": rusfar})
+    assert [row["date"] for row in result["rows"]] == days[:3]
+    assert [row["price"] for row in result["rows"]] == pytest.approx([2.1410, 2.1419, 2.1427])
+    assert all(row["source_ticker"] == "LQDT" for row in result["rows"])
+    assert result["omitted_after_anchor_dates"] == [days[3]]
+    assert result["anchor"] == {"date": days[2], "source_ticker": "LQDT", "source_kind": "observed"}
+    assert result["extended_end"] == days[2]
+
+
+def test_lineage_anchor_uses_newest_observed_and_highest_rank_on_ties():
+    day = "2024-01-01"
+    result = build_lineage(
+        {
+            "LQDT": [observed("LQDT", day, 2.1)],
+            "VTBM": [observed("VTBM", day, 1.1)],
+            "RUSFAR": [observed("RUSFAR", "2024-01-02", 1000)],
+        }
+    )
+    assert result["rows"] == [observed("LQDT", day, 2.1)]
+    assert result["omitted_after_anchor_dates"] == ["2024-01-02"]
+
+
+def test_lineage_uses_later_vtbm_when_it_is_the_last_observed_source():
+    sources = {
+        "LQDT": [observed("LQDT", "2024-01-01", 2)],
+        "VTBM": [observed("VTBM", "2024-01-01", 1), observed("VTBM", "2024-01-02", 1.1)],
+        "FXMM": [observed("FXMM", "2024-01-03", 100)],
+    }
+    result = build_lineage(sources)
+    assert result["anchor"]["source_ticker"] == "VTBM"
+    assert result["rows"][-1]["price"] == pytest.approx(1.1)
+    assert result["extended_end"] == "2024-01-02"
+
+
+def test_lineage_without_observations_is_explicitly_proxy_anchored():
+    rows = [observed("FXMM", "2024-01-01", 100), observed("FXMM", "2024-01-02", 105)]
+    result = build_lineage({"FXMM": rows})
+    assert [row["price"] for row in result["rows"]] == pytest.approx([100, 105])
+    assert result["observed_start"] is None
+    assert result["anchor"] == {
+        "date": "2024-01-02",
+        "source_ticker": "FXMM",
+        "source_kind": "synthetic_proxy",
+    }
+    assert result["omitted_after_anchor_dates"] == []
+
+
 def test_lineage_compounds_each_source_span_once_and_does_not_invent_middle_mark():
     sources = {
         "LQDT": [observed("LQDT", "2024-01-01", 100), observed("LQDT", "2024-01-03", 110)],
@@ -209,6 +263,7 @@ def test_lineage_refuses_disconnected_or_invalid_return_spans():
 def test_lineage_refuses_to_skip_higher_priority_observation():
     sources = {
         "LQDT": [observed("LQDT", "2024-01-02", 105)],
+        "VTBM": [observed("VTBM", "2024-01-03", 1.1)],
         "FXMM": [observed("FXMM", "2024-01-01", 100), observed("FXMM", "2024-01-03", 110)],
     }
     with pytest.raises(BenchmarkError, match="higher-ranked"):

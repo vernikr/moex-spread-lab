@@ -121,12 +121,14 @@ def build_lineage(raw_sources: dict[str, list[dict[str, Any]]]) -> dict[str, Any
         raise BenchmarkError("benchmark lineage has no rows")
     available = {row["date"]: ticker for ticker in CHAIN for row in sources.get(ticker, [])}
     returns = _daily_returns(sources)
-    latest = max(
-        (row for rows in sources.values() for row in rows),
-        key=lambda row: (row["date"], RANK.get(row["source_ticker"], -1)),
-    )
+    observed_rows = [row for ticker in OBSERVED for row in sources.get(ticker, [])]
+    candidates = observed_rows or [row for rows in sources.values() for row in rows]
+    latest = max(candidates, key=lambda row: (row["date"], RANK.get(row["source_ticker"], -1)))
     price, ticker = float(latest["price"]), str(latest["source_ticker"])
-    prices = [_price_row(latest["date"], price, ticker)]
+    anchor = _price_row(latest["date"], price, ticker)
+    omitted_after_anchor = [day for day in all_dates if day > latest["date"]]
+    all_dates = [day for day in all_dates if day <= latest["date"]]
+    prices = [anchor]
     omitted: list[str] = []
     index = len(all_dates) - 1
     while index > 0:
@@ -159,6 +161,8 @@ def build_lineage(raw_sources: dict[str, list[dict[str, Any]]]) -> dict[str, Any
         "extended_start": prices[0]["date"],
         "extended_end": prices[-1]["date"],
         "rows": prices,
+        "anchor": {key: anchor[key] for key in ("date", "source_ticker", "source_kind")},
+        "omitted_after_anchor_dates": omitted_after_anchor,
         "omitted_interior_dates": sorted(omitted),
         "source_rows": {ticker: len(rows) for ticker, rows in sources.items()},
         "interpretation": {

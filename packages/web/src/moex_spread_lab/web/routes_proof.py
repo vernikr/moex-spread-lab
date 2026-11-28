@@ -42,6 +42,32 @@ LARGE_PROOF_POST_ROUTES = frozenset(
 )
 
 
+_UNEXPECTED_API_ERRORS = (RuntimeError, TypeError, AttributeError, LookupError, ArithmeticError)
+
+
+def _unexpected_error(exc: Exception) -> str:
+    message = f"{type(exc).__name__}: {exc}"
+    return message[:500]
+
+
+def _run_and_send(
+    handler: Any, stream: bool, fn: Callable[[Callable[[dict[str, Any]], None] | None], Any]
+) -> tuple[bool, Any]:
+    if not stream:
+        return False, fn(None)
+    handler.start_ndjson()
+    try:
+        data = fn(lambda ev: handler.emit_ndjson({"type": "progress", **ev}))
+        handler.emit_ndjson({"type": "result", "data": data})
+    except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+        raise
+    except (ValueError, OSError) as exc:
+        handler.emit_ndjson({"type": "error", "error": str(exc)})
+    except _UNEXPECTED_API_ERRORS as exc:
+        handler.emit_ndjson({"type": "error", "error": _unexpected_error(exc)})
+    return True, None
+
+
 def strategy_registry_payload(*, timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
     """Serialize discovered ``StrategyPlugin`` schemas, fills, universes, and context specs."""
     registry = get_strategy_registry(refresh=True)
@@ -186,16 +212,9 @@ def handle_post_proof(
 
     def run_and_send(fn: Callable[[Callable[[dict[str, Any]], None] | None], Any]) -> Any:
         nonlocal stream_started
-        if not stream:
-            return fn(None)
-        handler.start_ndjson()
-        stream_started = True
-        try:
-            data = fn(lambda ev: handler.emit_ndjson({"type": "progress", **ev}))
-            handler.emit_ndjson({"type": "result", "data": data})
-        except (ValueError, OSError) as exc:
-            handler.emit_ndjson({"type": "error", "error": str(exc)})
-        return None
+        started, result = _run_and_send(handler, stream, fn)
+        stream_started = stream_started or started
+        return result
 
     if path in {"/api/proof/windows", "/api/proof/plateau"}:
         windows = path == "/api/proof/windows"

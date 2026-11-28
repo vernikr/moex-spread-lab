@@ -28,6 +28,12 @@ from .routes_proof import (
 ALL_POST_ROUTES = frozenset({"/api/settings", "/api/dev/probe"}) | PROOF_POST_ROUTES
 _MAX_BODY = 192 * 1024
 _SMALL_BODY = 8192
+_UNEXPECTED_API_ERRORS = (RuntimeError, TypeError, AttributeError, LookupError, ArithmeticError)
+
+
+def _unexpected_error(exc: Exception) -> str:
+    message = f"{type(exc).__name__}: {exc}"
+    return message[:500]
 
 
 def handle_get_settings(path: str, store: Any) -> tuple[bool, Any]:
@@ -65,6 +71,9 @@ def dispatch_get(handler: Any, store: Any, path: str) -> None:
                 return
     except (W0Error, ValueError, OSError) as exc:
         handler.send_json(400, {"error": str(exc)})
+        return
+    except _UNEXPECTED_API_ERRORS as exc:
+        handler.send_json(500, {"error": _unexpected_error(exc)})
         return
     handler.send_json(404, {"error": "not found"})
 
@@ -122,6 +131,9 @@ def dispatch_post(handler: Any, store: Any, path: str) -> None:
         return
     except (ValueError, OSError) as exc:
         handler.send_json(400, {"error": str(exc)})
+        return
+    except _UNEXPECTED_API_ERRORS as exc:
+        handler.send_json(500, {"error": _unexpected_error(exc)})
         return
     if not already_sent:
         handler.send_json(200, result)

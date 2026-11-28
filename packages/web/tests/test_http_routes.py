@@ -466,6 +466,26 @@ class WebHttpRoutesTests(unittest.TestCase):
             self.assertEqual(cal_ctx["quarterly"][0]["default"], 2.2)
             self.assertEqual(cal_ctx["monthly"][0]["default"], 1.6)
 
+    def test_unexpected_api_exceptions_return_json_or_streamed_errors(self) -> None:
+        opt_req = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}
+        with mock.patch.object(dispatch, "handle_get_proof", side_effect=KeyError("catalog boom")):
+            status, _, raw = self._request("GET", "/api/proof/catalog")
+            self.assertEqual(status, 500)
+            self.assertIn("KeyError", json.loads(raw)["error"])
+        with mock.patch.object(strategy_registry, "research_run", side_effect=KeyError("run boom")):
+            status, _, raw = self._request("POST", "/api/proof/run", body=opt_req)
+            self.assertEqual(status, 500)
+            self.assertIn("KeyError", json.loads(raw)["error"])
+            status, hdrs, raw = self._request(
+                "POST", "/api/proof/run", body=opt_req, headers={"X-Progress-Stream": "1"}
+            )
+            self.assertEqual(status, 200)
+            self.assertIn("application/x-ndjson", hdrs["content-type"])
+            self.assertEqual(
+                [json.loads(line) for line in raw.decode("utf-8").splitlines() if line],
+                [{"type": "error", "error": "KeyError: 'run boom'"}],
+            )
+
     def test_proof_ndjson_streaming_search_lock_409_and_large_body_cap(self) -> None:
         large_confirm = {
             "universe": "pair_screen",

@@ -149,6 +149,42 @@ console.log(JSON.stringify({{
     assert _node_json(script)["out"] == "a&lt;b &amp; &quot;c&quot; &#39;d"
 
 
+@pytest.mark.skipif(not shutil.which("node"), reason="Node is optional")
+def test_garch_normalization_does_not_explode_after_flat_opening_bars() -> None:
+    """#331: a zero opening difference must not divide by the 1e-10 omega floor (5000-sigma spikes)."""
+    script = f"""
+const mod = await import({json.dumps((_JS_DIR / "normalizations.js").as_uri())});
+const flat = [1.0, 1.0, 1.05, 1.03].map(v => ({{ spread_rel: v }}));
+console.log(JSON.stringify(mod.spreadDisplayValues(flat, "garch")));
+"""
+    values = _node_json(script)
+    assert values[0] is None and values[1] == 0, values
+    assert abs(values[2]) <= 1.0 + 1e-9, values
+    assert max(abs(v) for v in values if v is not None) < 10, values
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="Node is optional")
+def test_garch_normalization_spans_a_missing_bar_without_freezing_variance() -> None:
+    """#331: a null bar keeps the next valid bar (lag-aware) and must not reset the recursion."""
+    script = f"""
+const mod = await import({json.dumps((_JS_DIR / "normalizations.js").as_uri())});
+const gapped = [1.0, 1.1, null, 1.2, 1.15].map(v => ({{ spread_rel: v }}));
+const clean = [1.0, 1.1, 1.2, 1.15].map(v => ({{ spread_rel: v }}));
+console.log(JSON.stringify({{
+  gapped: mod.spreadDisplayValues(gapped, "garch"),
+  clean: mod.spreadDisplayValues(clean, "garch"),
+}}));
+"""
+    result = _node_json(script)
+    gapped, clean = result["gapped"], result["clean"]
+    assert gapped[2] is None, gapped
+    assert gapped[3] is not None and gapped[4] is not None, gapped
+    # Two-bar gap: the innovation is standardized by the 2-step scale, so it stays finite and signed.
+    assert 0 < abs(gapped[3]) < 10, gapped
+    assert abs(gapped[4]) < 10, gapped
+    assert all(abs(v) < 10 for v in clean if v is not None), clean
+
+
 _LEDGER_SCRIPT = """
 const charts = await import($charts);
 const dom = await import($dom);

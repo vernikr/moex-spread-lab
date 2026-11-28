@@ -109,16 +109,33 @@ function _computeSpreadValues(S, mode) {
   if (mode === 'ema10' || mode === 'ewma10') ema = emaState(raw, 10);
   if (mode === 'garch') {
     let sig2 = null;
+    let last = null;
+    let lastAt = -1;
     const z = new Array(n).fill(null);
-    const d0 = raw[0] != null && raw[1] != null ? raw[1] - raw[0] : null;
-    if (d0 != null && isFinite(d0)) sig2 = d0 * d0;
-    for (let t = 1; t < n; t++) {
-      const d = raw[t] != null && raw[t - 1] != null ? raw[t] - raw[t - 1] : null;
-      if (d == null || !isFinite(d)) { z[t] = null; continue; }
-      if (sig2 == null) sig2 = d * d;
+    for (let t = 0; t < n; t++) {
+      const cur = raw[t];
+      if (cur == null) continue;
+      if (last == null) {
+        last = cur;
+        lastAt = t;
+        continue;
+      }
+      const lag = Math.max(1, t - lastAt);
+      const d = cur - last;
+      last = cur;
+      lastAt = t;
+      if (!isFinite(d)) continue;
+      const stepVar = (d * d) / lag;
+      if (sig2 == null) {
+        // A flat opening (`d === 0`) leaves the variance unseeded: the first real innovation
+        // seeds `sig2 = d^2` so it standardizes to ±1 instead of dividing by the omega floor.
+        if (stepVar !== 0) { sig2 = stepVar; z[t] = Math.sign(d) / Math.sqrt(lag); }
+        else z[t] = 0;
+        continue;
+      }
       const prev = sig2;
-      z[t] = prev > 0 ? d / Math.sqrt(prev) : 0;
-      sig2 = 1e-10 + 0.1 * d * d + 0.85 * prev;
+      z[t] = prev > 0 ? d / Math.sqrt(prev * lag) : 0;
+      sig2 = 1e-10 + 0.1 * stepVar + 0.85 * prev;
     }
     return z;
   }

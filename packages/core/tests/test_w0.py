@@ -9,6 +9,7 @@ from moex_spread_lab.core.w0 import (
     load_contracts,
     run_id,
     scan_secrets,
+    write_json,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -70,6 +71,23 @@ class W0Tests(unittest.TestCase):
                 with self.assertRaises(W0Error) as ctx:
                     load_contracts(path, "NEAR", "FAR")
                 self.assertIn("whole number", str(ctx.exception))
+
+    def test_write_json_emits_strict_json_and_leaves_no_temp_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "out.json"
+            write_json(path, {"b": [1, 2], "a": "x"})
+            raw = path.read_text(encoding="utf-8")
+            self.assertEqual(json.loads(raw), {"b": [1, 2], "a": "x"})
+            self.assertEqual(list(Path(directory).glob("*.json*")), [path])
+            self.assertEqual(list(Path(directory).glob(".*.")), [])
+
+    def test_write_json_rejects_non_finite_numbers(self):
+        for bad in (float("nan"), float("inf"), float("-inf")):
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "out.json"
+                with self.assertRaises(ValueError):
+                    write_json(path, {"x": bad})
+                self.assertFalse(path.exists())
 
     def test_load_contracts_rejects_nan_tick_size(self):
         with tempfile.TemporaryDirectory() as directory:

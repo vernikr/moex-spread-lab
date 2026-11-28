@@ -8,7 +8,9 @@ import math
 import os
 import re
 import subprocess
+import tempfile
 from collections.abc import Iterable
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, cast
 
@@ -122,11 +124,24 @@ def read_hashed_json(
 
 
 def write_json(path: Path, value: Any) -> None:
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    serialized = (
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False) + "\n"
     )
+    # A sibling temporary file keeps replacement atomic for concurrent readers.
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(serialized)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    # code-health: allow broad exception: a partially written temp file must not mask the original failure
+    except BaseException:
+        with suppress(OSError):
+            os.unlink(tmp)
+        raise
 
 
 def _run_id(identity: dict[str, Any]) -> str:

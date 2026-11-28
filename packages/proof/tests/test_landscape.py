@@ -48,8 +48,8 @@ def test_contains_int_kind_rejects_non_int_and_off_step() -> None:
     assert ax.contains(2) is True
     assert ax.contains(4) is True
     assert ax.contains(2.0) is False  # float on int axis
-    assert ax.contains(3) is False    # off-step odd integer
-    assert ax.contains(11) is False   # above high
+    assert ax.contains(3) is False  # off-step odd integer
+    assert ax.contains(11) is False  # above high
 
 
 def test_suggest_int_axis_with_step_gt_1_uses_suggest_int() -> None:
@@ -70,14 +70,16 @@ def test_suggest_float_axis_uses_suggest_float_with_step() -> None:
 
 def test_validate_rejects_off_grid_slippage_ticks() -> None:
     with pytest.raises(W0Error):
-        validate({
-            "universe": "pair_screen",
-            "pair": "CNYRUBF/CRZ6",
-            "strategy": "mean_reversion",
-            "quantity": 2,
-            "slippage_ticks": 0.123,
-            "parameters": {"entry_z": 1.5, "exit_z": 0.3, "lookback": 20},
-        })
+        validate(
+            {
+                "universe": "pair_screen",
+                "pair": "CNYRUBF/CRZ6",
+                "strategy": "mean_reversion",
+                "quantity": 2,
+                "slippage_ticks": 0.123,
+                "parameters": {"entry_z": 1.5, "exit_z": 0.3, "lookback": 20},
+            }
+        )
 
 
 def test_intersect_axes_computes_overlap() -> None:
@@ -109,4 +111,3 @@ def test_strategy_catalog_carries_kind() -> None:
     # Float thresholds keep their float kind.
     assert mr["entry_z"].kind == "float"
     assert mr["entry_z"].is_integer is False
-

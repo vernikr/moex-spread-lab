@@ -115,11 +115,11 @@ static Py_ssize_t raw_quantity(double budget, double fixed, double required, dou
     double raw = floor((budget - fixed) / (required + 2.0 * uc_sum)); return (raw > 0.0) ? (Py_ssize_t)raw : 0;
 }
 typedef struct TradeSpec TradeSpec; static int parse_double_item(PyObject *obj, double *out);
-typedef struct { double start_wealth, end_wealth, end_cum_net, end_price; int any_shortfall; } ScalarWindow;
-typedef struct { Py_ssize_t i, start_idx, end_idx; int shortfall; double wealth, price_i, cumulative; } ScalarStep;
+typedef struct { double start_wealth, open_wealth, open_cum_net, end_wealth, end_cum_net, end_price; int any_shortfall; } ScalarWindow;
+typedef struct { Py_ssize_t i, start_idx, end_idx; int shortfall; double wealth, open_wealth, price_i, cumulative, prev_cum; } ScalarStep;
 static void scalar_window_step(ScalarWindow *sw, const ScalarStep *st) {
     if (st->i >= st->start_idx && st->i <= st->end_idx && st->shortfall) sw->any_shortfall = 1;
-    if (st->i == st->start_idx) sw->start_wealth = st->wealth;
+    if (st->i == st->start_idx) { sw->start_wealth = st->wealth; sw->open_wealth = st->open_wealth; sw->open_cum_net = st->prev_cum; }
     if (st->i == st->end_idx) { sw->end_wealth = st->wealth; sw->end_cum_net = st->cumulative; sw->end_price = st->price_i; }
 }
 static int require_mr_window(Py_ssize_t row_count, Py_ssize_t lookback, Py_ssize_t delay) {
@@ -623,7 +623,7 @@ static PyObject *build_accepted_tuples(
     }
     for (Py_ssize_t a = 0; a < n_acc; a++) { Py_ssize_t sp_idx = PyLong_AsSsize_t(PyList_GET_ITEM(accepted_out, a));
         const TradeSpec *sp = &specs[sp_idx]; PyObject *tup = NULL; if (scalar_only) {
-            tup = Py_BuildValue("(nn)", sp->entry_idx, sp->exit_idx);
+            tup = Py_BuildValue("(nnd)", sp->entry_idx, sp->exit_idx, sp->margin_rub);
         } else { double gross_rounded = 0.0; if (exact_round2(sp->gross_rub, &gross_rounded) < 0) {
                 Py_DECREF(acc_tuples); return NULL;
             }
@@ -679,7 +679,7 @@ static PyObject *fast_size_proof_metrics(PyObject *Py_UNUSED(self), PyObject *ar
     accepted_out = PyList_New(0); if (!accepted_out) goto cleanup;
     double cumulative = 0.0, free_cash = initial, posted = 0.0; double wealth = initial;
     SizingRules rules = {stress, native_spread, funding_only, 0, initial}; double p0 = (n > 0) ? prices[0] : 1.0;
-    ScalarWindow sw = {initial, initial, 0.0, p0, 0};
+    ScalarWindow sw = {initial, initial, 0.0, initial, 0.0, p0, 0};
     TradeSpec *pos_trade = NULL; double pos_mark = 0.0; Py_ssize_t next_trade_cursor = 0;
     for (Py_ssize_t i = 0; i < n; i++) { double unit_funding = 0.0; int unit_funding_contracts = 0; if (has_funding) {
             PyObject *row = PyList_GET_ITEM(rows_lst, i); if (!PyDict_Check(row)) {
@@ -709,16 +709,16 @@ static PyObject *fast_size_proof_metrics(PyObject *Py_UNUSED(self), PyObject *ar
         if (exact_round2(unit_funding * (double)funding_q, &funding) < 0) goto cleanup;
         if (step.funding_owner != NULL) { step.funding_owner->gross_rub += funding;
         }
-        if (exact_round2(step.daily + funding, &step.daily) < 0 ||
+        double prev_cum = cumulative; if (exact_round2(step.daily + funding, &step.daily) < 0 ||
             exact_round2(step.cost, &step.cost) < 0 ||
             exact_round2(cumulative + step.daily - step.cost, &cumulative) < 0) { goto cleanup;
         }
         double growth = (i > 0) ? (prices[i] / prices[i - 1]) : 1.0;
-        wealth = fmax(free_cash, 0.0) * growth + fmin(free_cash, 0.0) + posted + step.daily - step.cost;
+        double open_w = fmax(free_cash, 0.0) * growth + fmin(free_cash, 0.0) + posted; wealth = open_w + step.daily - step.cost;
         if (pos_trade == NULL) posted = 0.0;
         else if (is_elig || is_entry_elig) posted = posted_units[i] * (double)pos_trade->quantity;
         free_cash = wealth - posted; int shortfall = (free_cash < -1e-7); rules.paused |= shortfall;
-        if (scalar_only) { ScalarStep st = {i, start_idx, end_idx, shortfall, wealth, prices[i], cumulative};
+        if (scalar_only) { ScalarStep st = {i, start_idx, end_idx, shortfall, wealth, open_w, prices[i], cumulative, prev_cum};
             scalar_window_step(&sw, &st);
         } else if (emit_ledger_row(ledger, i, PyList_GET_ITEM(dates_lst, i), cumulative, wealth, shortfall) < 0) {
             goto cleanup;
@@ -726,7 +726,7 @@ static PyObject *fast_size_proof_metrics(PyObject *Py_UNUSED(self), PyObject *ar
     }
     PyObject *acc_tuples = build_accepted_tuples(accepted_out, specs, scalar_only); if (!acc_tuples) goto cleanup;
     if (scalar_only) {
-        PyObject *summary = Py_BuildValue("(dddddi)", p0, sw.end_price, sw.end_wealth, sw.end_cum_net, sw.start_wealth, sw.any_shortfall);
+        PyObject *summary = Py_BuildValue("(dddddddi)", p0, sw.end_price, sw.end_wealth, sw.end_cum_net, sw.start_wealth, sw.open_wealth, sw.open_cum_net, sw.any_shortfall);
         if (summary) { ret_obj = PyTuple_Pack(2, summary, acc_tuples); Py_DECREF(summary);
         }
     } else { ret_obj = PyTuple_Pack(2, ledger, acc_tuples);

@@ -183,3 +183,104 @@ def missing_exposure(
         )
         reasons.append(f"Открытого спреда не было {where}.")
     return missing, reasons
+
+
+def _trade_hurdle_at(
+    trade: dict[str, Any], index: dict[str, int], marks: dict[str, float], day_idx: int, day: str
+) -> float:
+    entry, exit_ = trade["entry"]["date"], trade["exit"]["date"]
+    entry_idx, exit_idx = index.get(entry), index.get(exit_)
+    if entry_idx is None or exit_idx is None or day_idx <= entry_idx:
+        return 0.0
+    if day_idx >= exit_idx:
+        return float(trade["lqdt_on_margin_rub"])
+    entry_mark = marks.get(entry, math.nan)
+    if entry_mark <= 0 or not math.isfinite(entry_mark):
+        return math.nan
+    return float(trade["margin_rub"]) * (marks.get(day, math.nan) / entry_mark - 1.0)
+
+
+def margin_hurdle_at(
+    proof: dict[str, Any], index: dict[str, int], marks: dict[str, float], day: str | None
+) -> float:
+    """Cumulative LQDT opportunity cost accrued on open trades' posted margin up to ``day``."""
+    if day is None or day not in index:
+        return 0.0
+    day_idx = index[day]
+    trades: list[dict[str, Any]] = proof.get("trades") or []
+    return sum(_trade_hurdle_at(trade, index, marks, day_idx, day) for trade in trades)
+
+
+def _grow_cash(free_cash: float, start_mark: float | None, end_mark: float | None) -> float:
+    if start_mark is None or end_mark is None or start_mark <= 0 or not math.isfinite(start_mark):
+        return math.nan
+    return max(free_cash, 0.0) * (end_mark / start_mark) + min(free_cash, 0.0)
+
+
+def scalar_excess(
+    closing: float, opening: float, anchor_mark: float | None, end_mark: float | None
+) -> float:
+    """Period wealth change minus the LQDT return on the period's opening balance."""
+    diff = closing - _grow_cash(opening, anchor_mark, end_mark)
+    return 0.0 if abs(diff) < 1e-9 else diff
+
+
+def _auto_train_open_wealth(
+    proof: dict[str, Any], ledger: list[dict[str, Any]], s_i: int, marks: dict[str, float]
+) -> float:
+    if s_i == 0:
+        return float(
+            proof.get("sizing", {}).get(
+                "initial_capital_rub",
+                proof.get("initial_capital_rub", DEFAULT_INITIAL_CAPITAL_RUB),
+            )
+        )
+    prev_row = ledger[s_i - 1]
+    posted_prev = float(prev_row.get("posted_margin_rub") or 0.0)
+    free_prev = float(prev_row["account_value_rub"]) - posted_prev
+    grown = _grow_cash(free_prev, marks.get(prev_row["date"]), marks.get(ledger[s_i]["date"]))
+    return grown + posted_prev
+
+
+def period_evaluation(
+    proof: dict[str, Any], marks: dict[str, float], split: EvaluationSplit
+) -> tuple[float, float, float, float]:
+    """Return ``(net_change, hurdle, train_x, result_x)`` for the evaluated split."""
+    ledger: list[dict[str, Any]] = proof["ledger"]
+    index = {row["date"]: i for i, row in enumerate(ledger)}
+    train_start, train_end = split.training[0], split.training[-1]
+    s_i, e_i = index[train_start], index[train_end]
+    prev_day = ledger[s_i - 1]["date"] if s_i > 0 else None
+    net_prev = float(ledger[s_i - 1].get("cumulative_net_rub", 0.0)) if s_i > 0 else 0.0
+    net_train = float(ledger[e_i]["cumulative_net_rub"])
+    h_prev = margin_hurdle_at(proof, index, marks, prev_day)
+    h_train = margin_hurdle_at(proof, index, marks, train_end)
+    train_net = net_train - net_prev
+    train_hurdle = h_train - h_prev
+    is_auto = automatic(proof.get("selection", {}))
+    if is_auto:
+        train_open = _auto_train_open_wealth(proof, ledger, s_i, marks)
+        train_x = scalar_excess(
+            float(ledger[e_i]["account_value_rub"]),
+            train_open,
+            marks.get(train_start),
+            marks.get(train_end),
+        )
+    else:
+        train_x = train_net - train_hurdle
+    if not split.validation:
+        return train_net, train_hurdle, train_x, train_x
+    val_end = split.validation[-1]
+    v_i = index[val_end]
+    net_change = float(ledger[v_i]["cumulative_net_rub"]) - net_train
+    hurdle = margin_hurdle_at(proof, index, marks, val_end) - h_train
+    if is_auto:
+        result_x = scalar_excess(
+            float(ledger[v_i]["account_value_rub"]),
+            float(ledger[e_i]["account_value_rub"]),
+            marks.get(train_end),
+            marks.get(val_end),
+        )
+    else:
+        result_x = net_change - hurdle
+    return net_change, hurdle, train_x, result_x

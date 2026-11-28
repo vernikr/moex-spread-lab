@@ -426,9 +426,8 @@ def _intersect_axes(
                 f"пусто [{a.low}, {a.high}] "
                 f"· [{b.low}, {b.high}]."
             )
-        # Cohort members reuse one strategy schema, so their steps match.
-        step = a.step if a.step == b.step else a.step
-        axes[name] = Axis(lo, hi, step)
+        # Cohort members reuse one strategy schema, so their steps and kinds match.
+        axes[name] = Axis(lo, hi, a.step, kind=a.kind)
 
 
 def _filter_training(

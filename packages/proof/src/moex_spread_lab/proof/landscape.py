@@ -22,9 +22,7 @@ type _Progress = Callable[[int, int], None]
 
 
 class _SuggestTrial(Protocol):
-    def suggest_int(
-        self, name: str, low: int, high: int, *, step: int = 1
-    ) -> int: ...
+    def suggest_int(self, name: str, low: int, high: int, *, step: int = 1) -> int: ...
 
     def suggest_float(
         self, name: str, low: float, high: float, *, step: float | None = None
@@ -42,9 +40,7 @@ class Axis:
         if self.step <= 0:
             raise ValueError(f"Axis step must be > 0, got {self.step!r}")
         if self.low > self.high:
-            raise ValueError(
-                f"Axis low ({self.low!r}) must be <= high ({self.high!r})"
-            )
+            raise ValueError(f"Axis low ({self.low!r}) must be <= high ({self.high!r})")
 
     @property
     def is_integer(self) -> bool:
@@ -66,9 +62,7 @@ class Axis:
 
     def suggest(self, trial: _SuggestTrial, name: str, high: float) -> int | float:
         if self.is_integer:
-            return trial.suggest_int(
-                name, int(self.low), int(high), step=int(self.step)
-            )
+            return trial.suggest_int(name, int(self.low), int(high), step=int(self.step))
         return round(trial.suggest_float(name, self.low, high, step=self.step), 6)
 
 

@@ -12,7 +12,7 @@ import secrets
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, cast
+from typing import Any
 
 import optuna
 
@@ -25,10 +25,11 @@ from moex_spread_lab.core.timeframes import get_timeframe as get_timeframe
 from moex_spread_lab.core.w0 import W0Error, run_id
 
 from .evaluation import account_checks as account_checks
-from .evaluation import annualize
+from .evaluation import annualize, excess_curve
 from .evaluation import annualized_returns as _annualized_returns
-from .evaluation import excess_curve as _excess_curve
 from .evaluation import missing_exposure as _missing_exposure
+from .evaluation import period_evaluation as _period_evaluation
+from .evaluation import scalar_excess as _scalar_excess
 from .landscape import Axis, Landscape
 from .landscape import ordered as _ordered
 from .request_validation import EXECUTION_AXES as EXECUTION_AXES
@@ -42,6 +43,7 @@ from .strategy_catalog import get_strategy_axes as get_strategy_axes
 from .worker_metrics import measure_phase as measure_phase
 
 _identity = identity
+_excess_curve = excess_curve
 
 _Obj = dict[str, Any]
 _Axes = dict[str, Axis]
@@ -57,16 +59,25 @@ def _blocked(metrics: _Obj, reasons: list[str]) -> _Obj:
     return {**metrics, "rank_score": None, "utility": None, "reason": " ".join(reasons)}
 
 
+def _clean_zero(value: float) -> float:
+    return 0.0 if value == 0.0 else value
+
+
 def _metrics(
-    net: float, excess: float, train: float, rate: float, validation: float | None
+    net: float,
+    hurdle: float,
+    excess: float,
+    train: float,
+    rate: float,
+    validation: float | None,
 ) -> _Obj:
     return {
-        "net_rub": round(net, 2),
-        "lqdt_on_margin_rub": round(net - excess, 2),
-        "train": round(train, 6),
-        "validation": round(validation, 6) if validation is not None else None,
-        "excess_rub": round(excess, 2),
-        "rub_per_session": round(rate, 6),
+        "net_rub": _clean_zero(round(net, 2)),
+        "lqdt_on_margin_rub": _clean_zero(round(hurdle, 2)),
+        "train": _clean_zero(round(train, 6)),
+        "validation": _clean_zero(round(validation, 6)) if validation is not None else None,
+        "excess_rub": _clean_zero(round(excess, 2)),
+        "rub_per_session": _clean_zero(round(rate, 6)),
     }
 
 
@@ -80,15 +91,18 @@ def measure_scalar_train(
     if reason := admission(proof, settings):
         return {"utility": None, "reason": reason}
     summary: _Summary = proof["_scalar_train_summary"]
-    initial, p0, end_price, end_wealth, end_cum_net, start_wealth, shortfall, exposed = summary
+    _initial, _p0, end_price, end_wealth, end_cum_net, start_wealth, shortfall, exposed = summary
     start, end = split.training[0], split.training[-1]
-    train_x = end_wealth - initial * end_price / p0
-    train_rate = train_x / len(split.training)
-    if not all(math.isfinite(v) for v in (train_rate, train_x)):
-        return {"utility": None, "reason": "Нет конечной оценки результата."}
-    metrics = _metrics(end_cum_net, train_x, train_rate, train_rate, None)
-    reasons = [] if exposed else [UNEXPOSED_REASON]
     anchor = marks.get(start)
+    open_wealth = float(proof.get("_scalar_train_open_wealth", start_wealth))
+    net_change = end_cum_net - float(proof.get("_scalar_train_open_cum_net", 0.0))
+    hurdle = float(proof.get("_scalar_train_hurdle", 0.0))
+    train_x = _scalar_excess(end_wealth, open_wealth, anchor, end_price)
+    train_rate = train_x / len(split.training)
+    if not all(math.isfinite(v) for v in (train_rate, train_x, hurdle)):
+        return {"utility": None, "reason": "Нет конечной оценки результата."}
+    metrics = _metrics(net_change, hurdle, train_x, train_rate, train_rate, None)
+    reasons = [] if exposed else [UNEXPOSED_REASON]
     if anchor is None or not all(math.isfinite(v) and v > 0 for v in (anchor, end_price)):
         annual: dict[str, float] | str = "Непригодная отметка LQDT в расчётном периоде."
     else:
@@ -230,25 +244,18 @@ def _measure(
         return measure_scalar_train(proof, marks, split, settings)
     if reason := admission(proof, settings):
         return {"utility": None, "reason": reason}
-    curve = _excess_curve(proof, marks)
-    train_x = curve[split.training[-1]]
+    net_change, hurdle, train_x, result_x = _period_evaluation(proof, marks, split)
     train_rate = train_x / len(split.training)
-    result_x, rate, validation_rate = train_x, train_rate, None
+    rate: float = train_rate
+    validation_rate: float | None = None
     segments = [("на обучении", split.training)]
     if split.validation:
-        result_x = curve[split.validation[-1]] - train_x
         rate = validation_rate = result_x / len(split.validation)
         segments.append(("на проверке", split.validation))
-    if not all(math.isfinite(v) for v in (train_rate, rate, result_x)):
+    if not all(math.isfinite(v) for v in (train_rate, rate, result_x, hurdle)):
         return {"utility": None, "reason": "Нет конечной оценки результата."}
     # Descriptive P&L is separate from eligibility: a flat, unexposed book is not a plateau.
-    net = {r["date"]: r["cumulative_net_rub"] for r in cast(list[dict[str, Any]], proof["ledger"])}
-    net_change = (
-        net[split.validation[-1]] - net[split.training[-1]]
-        if split.validation
-        else net[split.training[-1]]
-    )
-    metrics = _metrics(net_change, result_x, train_rate, rate, validation_rate)
+    metrics = _metrics(net_change, hurdle, result_x, train_rate, rate, validation_rate)
     missing, reasons = _missing_exposure(proof, segments, split)
     try:
         annual = _annualized_returns(proof, marks, split)

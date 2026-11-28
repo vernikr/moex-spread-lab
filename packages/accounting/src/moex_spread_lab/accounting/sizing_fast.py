@@ -299,6 +299,22 @@ def _pack_trade_specs(
     return intent_list, trade_specs
 
 
+def _scalar_margin_hurdle(
+    acc_tuples: list[tuple[int, int, float]], prices: Any, target_idx: int
+) -> float:
+    if target_idx < 0:
+        return 0.0
+    total = 0.0
+    for e_i, x_i, margin_rub in acc_tuples:
+        if target_idx <= e_i:
+            continue
+        if x_i >= 0 and target_idx >= x_i:
+            total += round(margin_rub * (prices[x_i] / prices[e_i] - 1.0), 2)
+        else:
+            total += margin_rub * (prices[target_idx] / prices[e_i] - 1.0)
+    return total
+
+
 def _resolve_scalar_bounds(
     scalar_summary: tuple[str, str] | None, date_to_idx: dict[str, int], n_rows: int
 ) -> tuple[bool, int, int]:
@@ -372,10 +388,22 @@ def size_proof_fast_c(
     if ledger_or_summary == "overlap":
         raise W0Error("Перекрывающиеся сигналы не поддерживаются одним счётом окна.")
     if use_scalar:
-        p0, end_price, end_wealth, end_cum_net, start_wealth, any_window_shortfall = (
-            ledger_or_summary
+        (
+            p0,
+            end_price,
+            end_wealth,
+            end_cum_net,
+            start_wealth,
+            open_wealth,
+            open_cum_net,
+            any_window_shortfall,
+        ) = ledger_or_summary
+        exposed = any(
+            e_i <= end_idx and (x_i < 0 or x_i >= start_idx) for e_i, x_i, _ in acc_tuples
         )
-        exposed = any(e_i <= end_idx and (x_i < 0 or x_i >= start_idx) for e_i, x_i in acc_tuples)
+        hurdle = _scalar_margin_hurdle(acc_tuples, columns[1], end_idx) - _scalar_margin_hurdle(
+            acc_tuples, columns[1], start_idx - 1
+        )
         proof["_scalar_train_summary"] = (
             initial,
             p0,
@@ -386,6 +414,9 @@ def size_proof_fast_c(
             bool(any_window_shortfall),
             exposed,
         )
+        proof["_scalar_train_open_wealth"] = open_wealth
+        proof["_scalar_train_open_cum_net"] = open_cum_net
+        proof["_scalar_train_hurdle"] = hurdle
     else:
         proof["trades"] = _hydrate_accepted_trades(intent_list, acc_tuples, marks)
         proof["ledger"] = ledger_or_summary

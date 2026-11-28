@@ -36,7 +36,7 @@ from moex_spread_lab.core.universe import (
     PAIR_UNIVERSE,
 )
 from moex_spread_lab.core.w0 import W0Error, canonical_bytes, read_hashed_json
-from moex_spread_lab.data.iss.history_freshness import history_freshness_signature
+from moex_spread_lab.data.iss.history_eligibility import history_eligibility_signature
 
 PROOF_SCHEMA = "execution-proof.v1"
 FORCED_EXIT_REASONS = frozenset(
@@ -460,7 +460,7 @@ def catalog_payload(service: CatalogService, settings: ResearchSettings) -> dict
                 "carry-screen-history-cache",
             )
         )
-        freshness = history_freshness_signature(cache_dirs)
+        freshness = history_eligibility_signature(cache_dirs)
         parts = (settings.timeframe, str(settings.initial_capital_rub), freshness)
         key = fingerprint(service.root, CATALOG_CACHE_NAMESPACE, parts)
         cached = load_bytes(service.root, key)
@@ -469,7 +469,7 @@ def catalog_payload(service: CatalogService, settings: ResearchSettings) -> dict
                 hit = json.loads(cached)
             except ValueError:
                 hit = None
-            if isinstance(hit, dict) and freshness == history_freshness_signature(cache_dirs):
+            if isinstance(hit, dict) and freshness == history_eligibility_signature(cache_dirs):
                 return cast(dict[str, Any], hit)
             key = None
     payload = _build_catalog(service, settings)

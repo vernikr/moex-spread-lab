@@ -201,7 +201,7 @@ def test_offline_history_rejects_missing_and_unknown_vintage_without_network(tmp
 
     args = ("TEST", "2026-01-01", "2026-01-02")
     kwargs = {"cache_dir": tmp_path, "cache_only": True, "opener": no_network}
-    with pytest.raises(iss_http.IssHistoryError, match="missing, expired or unverified"):
+    with pytest.raises(iss_http.IssHistoryError, match="missing or unverified"):
         iss_http.fetch_history(*args, **kwargs)
     path = tmp_path / "TEST-2026-01-01-2026-01-02-0.json"
     path.write_text(
@@ -212,12 +212,12 @@ def test_offline_history_rejects_missing_and_unknown_vintage_without_network(tmp
             }
         )
     )
-    with pytest.raises(iss_http.IssHistoryError, match="missing, expired or unverified"):
+    with pytest.raises(iss_http.IssHistoryError, match="missing or unverified"):
         iss_http.fetch_history(*args, **kwargs)
     document = json.loads(path.read_text())
-    document["cached_at"] = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+    document["cached_at"] = "2026-01-02T12:00:00+00:00"
     path.write_text(json.dumps(document))
-    with pytest.raises(iss_http.IssHistoryError, match="missing, expired or unverified"):
+    with pytest.raises(iss_http.IssHistoryError, match="missing or unverified"):
         iss_http.fetch_history(*args, **kwargs)
 
 
@@ -252,9 +252,9 @@ def test_open_day_request_finishing_after_midnight_is_not_reused(monkeypatch, tm
     assert len(calls) == 2
 
 
-def test_history_freshness_signature_changes_without_file_edits(tmp_path, monkeypatch):
+def test_history_eligibility_signature_tracks_clock_boundaries(tmp_path, monkeypatch):
     from moex_spread_lab.data.iss import iss_http
-    from moex_spread_lab.data.iss.history_freshness import history_freshness_signature
+    from moex_spread_lab.data.iss.history_eligibility import history_eligibility_signature
 
     now = datetime(2026, 11, 28, 12, tzinfo=UTC)
     monkeypatch.setattr(iss_http, "_cache_now", lambda: now)
@@ -267,27 +267,111 @@ def test_history_freshness_signature_changes_without_file_edits(tmp_path, monkey
             }
         )
     )
-    first = history_freshness_signature((tmp_path,))
-    assert first == history_freshness_signature((tmp_path,))
+    first = history_eligibility_signature((tmp_path,))
+    assert first == history_eligibility_signature((tmp_path,))
     monkeypatch.setattr(iss_http, "_cache_now", lambda: now + timedelta(days=1))
-    assert first != history_freshness_signature((tmp_path,))
+    assert first == history_eligibility_signature((tmp_path,))
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: now - timedelta(seconds=1))
+    assert first != history_eligibility_signature((tmp_path,))
 
 
-def test_cache_expiry_and_capture_date_are_conservative(monkeypatch):
+def test_cache_eligibility_and_capture_date_are_conservative(monkeypatch):
     from moex_spread_lab.data.iss import iss_http
 
     now = datetime(2026, 11, 28, 12, tzinfo=UTC)
     monkeypatch.setattr(iss_http, "_cache_now", lambda: now)
     recent = (now - timedelta(hours=1)).isoformat()
-    assert iss_http.cache_is_fresh({"cached_at": recent}, "2026-11-27")
-    assert not iss_http.cache_is_fresh({"cached_at": recent}, "2026-11-28")
-    assert not iss_http.cache_is_fresh({"cached_at": recent}, "2026-11-29")
-    assert not iss_http.cache_is_fresh(
-        {"cached_at": (now - timedelta(days=2)).isoformat()}, "2026-11-20"
+    assert iss_http.cache_page_is_eligible({"cached_at": recent}, "2026-11-27")
+    assert not iss_http.cache_page_is_eligible({"cached_at": recent}, "2026-11-28")
+    assert not iss_http.cache_page_is_eligible({"cached_at": recent}, "2026-11-29")
+    assert iss_http.cache_page_is_eligible(
+        {"cached_at": (now - timedelta(days=365)).isoformat()}, "2025-11-20"
     )
-    assert not iss_http.cache_is_fresh({"cached_at": "2026-11-27T12:00:00+00:00"}, "2026-11-27")
-    assert not iss_http.cache_is_fresh({}, "2026-11-20")
-    assert not iss_http.cache_is_fresh({"cached_at": "invalid"}, "2026-11-20")
+    assert not iss_http.cache_page_is_eligible(
+        {"cached_at": (now + timedelta(seconds=1)).isoformat()}, "2026-11-20"
+    )
+    assert not iss_http.cache_page_is_eligible({"cached_at": "2026-11-28T00:00:00"}, "2026-11-20")
+    assert not iss_http.cache_page_is_eligible(
+        {"cached_at": "2026-11-27T12:00:00+00:00"}, "2026-11-27"
+    )
+    assert not iss_http.cache_page_is_eligible({}, "2026-11-20")
+    assert not iss_http.cache_page_is_eligible({"cached_at": "invalid"}, "2026-11-20")
+
+
+@pytest.mark.parametrize("endpoint", ["candles", "history"])
+def test_closed_history_pages_reused_after_years_without_network(monkeypatch, tmp_path, endpoint):
+    from moex_spread_lab.data.iss import iss_http
+
+    clock = [datetime(2026, 2, 3, 12, tzinfo=UTC)]
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: clock[0])
+    calls = []
+
+    def opener(request, timeout):
+        calls.append(1)
+        payload = (
+            candles([[1, 1, 1, 1, 1, 1, "2026-02-01 12:00:00", "2026-02-01 12:59:59"]])
+            if endpoint == "candles"
+            else {"history": {"columns": ["TRADEDATE"], "data": [["2026-02-01"]]}}
+        )
+        return _Response(json.dumps(payload).encode())
+
+    def run(cache_only=False):
+        opts = {"cache_dir": tmp_path, "delay_seconds": 0, "opener": opener}
+        if endpoint == "candles":
+            return fetch_candle_series(
+                secid="TEST", interval=60, from_date="2026-02-01", till_date="2026-02-01", **opts
+            )
+        return iss_http.fetch_history(
+            "TEST", "2026-02-01", "2026-02-01", cache_only=cache_only, **opts
+        )
+
+    assert run()["page_cache"][0]["source"] == "network"
+    clock[0] += timedelta(days=730)
+    assert run()["page_cache"][0]["source"] == "cache"
+    if endpoint == "history":
+        assert run(cache_only=True)["page_cache"][0]["source"] == "cache"
+    assert len(calls) == 1
+
+
+def test_offline_history_missing_cursor_page_fails_closed(monkeypatch, tmp_path):
+    from moex_spread_lab.data.iss import iss_http
+
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: datetime(2028, 1, 1, tzinfo=UTC))
+    args = ("GLZ6", "2025-01-01", "2026-01-01")
+    page = {
+        "url": iss_http.history_url(*args, 0),
+        "cached_at": "2026-02-01T00:00:00+00:00",
+        "payload": {
+            "history": {"columns": ["TRADEDATE"], "data": [[str(i)] for i in range(100)]},
+            "history.cursor": {"columns": ["INDEX", "TOTAL", "PAGESIZE"], "data": [[0, 223, 100]]},
+        },
+    }
+    (tmp_path / "GLZ6-2025-01-01-2026-01-01-0.json").write_text(json.dumps(page))
+
+    def no_network(*args, **kwargs):
+        pytest.fail("offline mode must not download missing pages")
+
+    with pytest.raises(iss_http.IssHistoryError, match="missing or unverified"):
+        iss_http.fetch_history(*args, cache_dir=tmp_path, cache_only=True, opener=no_network)
+
+
+def test_history_rejects_inconsistent_cursor_totals(tmp_path, monkeypatch):
+    from moex_spread_lab.data.iss import iss_http
+
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: datetime(2028, 1, 1, tzinfo=UTC))
+    args = ("TEST", "2025-01-01", "2026-01-01")
+    for start, count, total in ((0, 100, 223), (100, 1, 101)):
+        page = {
+            "url": iss_http.history_url(*args, start),
+            "cached_at": "2026-02-01T00:00:00+00:00",
+            "payload": {
+                "history": {"columns": ["TRADEDATE"], "data": [[str(i)] for i in range(count)]},
+                "history.cursor": {"columns": ["TOTAL"], "data": [[total]]},
+            },
+        }
+        (tmp_path / f"TEST-2025-01-01-2026-01-01-{start}.json").write_text(json.dumps(page))
+    with pytest.raises(iss_http.IssHistoryError, match="cursor total changed"):
+        iss_http.fetch_history(*args, cache_dir=tmp_path, cache_only=True)
 
 
 def test_candle_cache_keeps_distinct_date_chunks_and_reuses_them(tmp_path):

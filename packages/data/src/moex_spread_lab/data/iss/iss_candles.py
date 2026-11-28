@@ -20,7 +20,7 @@ from .iss_http import (
     DEFAULT_ISS_BASE_URL,
     IssIntakeError,
     atomic_cache_write,
-    cache_is_fresh,
+    cache_page_is_eligible,
     cache_timestamp,
     fetch_json_with_raw,
     is_safe_component,
@@ -125,7 +125,7 @@ def _try_load_cached_page(
         if (
             page.get("url") == url
             and isinstance(page.get("rows"), list)
-            and cache_is_fresh(page, till_date)
+            and cache_page_is_eligible(page, till_date)
         ):
             return page
     return None

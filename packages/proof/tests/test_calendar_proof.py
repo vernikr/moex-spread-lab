@@ -124,7 +124,7 @@ def test_calendar_asset_signature_checks_later_pages(tmp_path, monkeypatch):
     first = next(directory.glob("SRH3-*-0.json"))
     second = directory / f"SRH3-{HISTORY_FROM}-{TILL}-100.json"
     page = json.loads(first.read_text())
-    page["cached_at"] = (now - timedelta(hours=23)).isoformat()
+    page["cached_at"] = (now + timedelta(hours=1)).isoformat()
     second.write_text(json.dumps(page))
     before = asset_eod_signature(directory, "SR", TILL, ())
     clock[0] += timedelta(hours=2)
@@ -167,7 +167,7 @@ def test_calendar_does_not_reuse_open_day_network_snapshot(tmp_path, monkeypatch
     assert data._load_asset("SR") is not old
 
 
-def test_calendar_memory_cache_expires_without_file_edits(tmp_path, monkeypatch):
+def test_calendar_memory_cache_remains_valid_without_file_edits(tmp_path, monkeypatch):
     from moex_spread_lab.data.iss import iss_http
 
     _build_root(tmp_path)
@@ -178,9 +178,9 @@ def test_calendar_memory_cache_expires_without_file_edits(tmp_path, monkeypatch)
     whole = CalendarData(tmp_path, offline=True)
     assert by_asset._load_asset("SR")["windows"].get("SR")
     assert whole._load()["windows"].get("SR")
-    clock[0] += timedelta(hours=25)
-    assert not by_asset._load_asset("SR")["windows"].get("SR")
-    assert not whole._load()["windows"].get("SR")
+    clock[0] += timedelta(days=730)
+    assert by_asset._load_asset("SR")["windows"].get("SR")
+    assert whole._load()["windows"].get("SR")
 
 
 def _zscore_request(quantity: int = 2, window: int = 20, timeframe: str | None = None) -> dict:

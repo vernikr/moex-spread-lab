@@ -27,7 +27,9 @@ The proof workbench supersedes the S2 pair table at `/`: library-based auto-tuni
 
 **All UI/parameter controls are research-hypothesis changes only.** They never alter A-02/A-04, the pilot's fixed RUB 5k buffers / 10k risk trigger / 15k shortfall boundary, emergency-money rules, broker authority, or any claim about executable returns. Current settings, scores and diagnostic limits are in [`packages/proof/docs/execution-proof.md`](../packages/proof/docs/execution-proof.md); product direction is tracked in the [Issue #12](https://github.com/vernikr/moex-spread-lab/issues/12) workstream.
 
-## Implementation decisions (2026-11-26 – 2026-11-27)
+## Implementation decisions (2026-11-26 – 2026-11-28)
+
+- **Completed ISS history has no age-based expiry (#332).** The user replaced #284's conservative 24-hour limit: a closed range captured after its Moscow end date is reusable without a time limit, subject to page and pagination validation. Open ranges, unknown or future capture times remain ineligible. Historical corrections are possible, so reconciliation is explicit, not automatic; raw-body retention is unchanged.
 
 - **Retired W1–W7 research pipeline and sealed W7 validation (#190).** Stage-9 accounting is costs, VTB account risk, causal sizing and the portfolio overlay; `import moex_spread_lab.accounting` no longer loads research/validation/replay/ledger/Parquet code. No change to proof/screener validation shares, costs, capital controls or trading authority.
 - **Retired S2 compatibility surface / maximum-reduction policy (#243).** The S2 API (`/api/run|screen|optimize|catalog|runs|searches`, `proof.screener_search`, `proof.web_legacy`, `moex_spread_lab.screener_search`) and the `research`/`validation` root shims were deleted. Standing policy: delete unused code/routes/shims instead of preserving them, with behavioural tests (incl. negative) and a register entry. Retained: `strategies.pair_screener`, `/api/proof/*`, settings/timeframes/dev routes.

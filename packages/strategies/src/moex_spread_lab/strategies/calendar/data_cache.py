@@ -11,7 +11,7 @@ from typing import Any
 from moex_spread_lab.core.contracts import plugin_proof_adapter
 from moex_spread_lab.core.settings import MIN_DAILY_VOLUME, EvaluationSplit
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.data.iss.history_freshness import history_page_is_fresh
+from moex_spread_lab.data.iss.history_eligibility import history_page_is_eligible
 from moex_spread_lab.data.iss.iss_http import HISTORY_PAGE_SIZE
 
 from ..base import calendar_proof_plugin_ids, discover_strategies
@@ -97,7 +97,7 @@ def asset_eod_signature(
                         st.st_size,
                         st.st_ctime_ns,
                         st.st_ino,
-                        history_page_is_fresh(p, till),
+                        history_page_is_eligible(p, till),
                     )
                 )
                 idx += HISTORY_PAGE_SIZE

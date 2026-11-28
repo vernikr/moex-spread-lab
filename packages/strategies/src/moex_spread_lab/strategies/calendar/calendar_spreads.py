@@ -8,7 +8,7 @@ from typing import Any
 from moex_spread_lab.core.settings import INITIAL_CAPITAL
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data import MarketDataStore
-from moex_spread_lab.data.iss.history_freshness import history_freshness_signature
+from moex_spread_lab.data.iss.history_eligibility import history_eligibility_signature
 from moex_spread_lab.data.iss.iss_http import history_range_closed
 
 from ..calendar_eval import FILLS, account_trades, evaluate_variants, read_benchmark
@@ -122,7 +122,7 @@ class CalendarData:
     def _eod_signature(self) -> tuple[Any, ...]:
         files, _ = scan_cache_json_sigs(self.cache)
         extras = stat_extras(self.root)
-        freshness = history_freshness_signature((self.cache,))
+        freshness = history_eligibility_signature((self.cache,))
         return (tuple(files), tuple(extras), freshness)
 
     def _shared_metadata(self) -> dict[str, Any]:

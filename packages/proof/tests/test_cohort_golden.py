@@ -91,7 +91,7 @@ def _run_mixed_cohort(tmp_path) -> tuple[dict, list[dict]]:
     events: list[dict] = []
     with (
         patch.dict("os.environ", {"MOEX_PROOF_WORKERS": "1", "MOEX_OFFLINE_ONLY": "1"}),
-        patch("moex_spread_lab.data.iss.iss_http.cache_is_fresh", return_value=True),
+        patch("moex_spread_lab.data.iss.iss_http.cache_page_is_eligible", return_value=True),
     ):
         service = ProofService(tmp_path)
         try:

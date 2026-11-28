@@ -49,7 +49,7 @@ def _count_build_catalog(monkeypatch: pytest.MonkeyPatch) -> list[tuple]:
     return calls
 
 
-def test_catalog_rebuilds_when_history_expires_without_file_edits(tmp_path, monkeypatch):
+def test_catalog_remains_valid_after_years_without_file_edits(tmp_path, monkeypatch):
     from moex_spread_lab.data.iss import iss_http
 
     two_calendar_windows(tmp_path)
@@ -61,19 +61,19 @@ def test_catalog_rebuilds_when_history_expires_without_file_edits(tmp_path, monk
         before = service.catalog()
         assert service.catalog() == before
         assert len(calls) == 1
-        clock[0] += timedelta(hours=25)
+        clock[0] += timedelta(days=730)
         fresh_service = _fresh_service(tmp_path)
         try:
-            expired_after_restart = fresh_service.catalog()
-            assert len(calls) == 2
-            expired = service.catalog()
-            assert expired == expired_after_restart
-            assert len(calls) == 2
+            after_restart = fresh_service.catalog()
+            assert len(calls) == 1
+            after = service.catalog()
+            assert after == after_restart
+            assert len(calls) == 1
             monkeypatch.setenv("MOEX_DERIVED_CACHE", "0")
-            assert expired == service.catalog()
+            assert after == service.catalog()
         finally:
             fresh_service.close()
-        assert expired != before
+        assert after == before
     finally:
         service.close()
 

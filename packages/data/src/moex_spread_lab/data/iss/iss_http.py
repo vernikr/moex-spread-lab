@@ -12,7 +12,7 @@ import time
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote, urlencode
@@ -106,7 +106,7 @@ def history_range_closed(till_date: str) -> bool:
         return False
 
 
-def cache_is_fresh(page: dict[str, Any], till_date: str) -> bool:
+def cache_page_is_eligible(page: dict[str, Any], till_date: str) -> bool:
     try:
         end = date.fromisoformat(till_date)
         captured = datetime.fromisoformat(page["cached_at"])
@@ -114,11 +114,10 @@ def cache_is_fresh(page: dict[str, Any], till_date: str) -> bool:
             return False
         now = _cache_now()
         moscow = ZoneInfo("Europe/Moscow")
-        age = now - captured
         return (
             end < now.astimezone(moscow).date()
             and captured.astimezone(moscow).date() > end
-            and timedelta(0) <= age < timedelta(days=1)
+            and captured <= now
         )
     except (KeyError, TypeError, ValueError):
         return False
@@ -400,7 +399,7 @@ def _try_load_cached_history_page(
     cache_path: Path | None, url: str, till_date: str
 ) -> tuple[dict[str, Any], str] | None:
     page = read_history_cache_page(cache_path) if cache_path is not None else None
-    if page is not None and page.get("url") == url and cache_is_fresh(page, till_date):
+    if page is not None and page.get("url") == url and cache_page_is_eligible(page, till_date):
         payload: object = page.get("payload")
         raw_hash: object = page.get("raw_response_sha256")
         if isinstance(payload, dict):
@@ -422,7 +421,7 @@ def _load_or_fetch_history_page(
         return *cached, "cache"
     if cfg.cache_only:
         raise cfg.error(
-            f"ISS history page missing, expired or unverified for {cfg.secid} at {start}; "
+            f"ISS history page missing or unverified for {cfg.secid} at {start}; "
             "run online intake first"
         )
     if cfg.delay_seconds:
@@ -455,6 +454,15 @@ def _parse_history_total(payload: dict[str, Any], error: type[W0Error]) -> int |
     )
 
 
+def _consistent_history_total(
+    payload: dict[str, Any], previous: int | None, cfg: _HistoryFetchConfig, start: int
+) -> int | None:
+    current = _parse_history_total(payload, cfg.error)
+    if current is not None and previous is not None and current != previous:
+        raise cfg.error(f"ISS history cursor total changed for {cfg.secid} at {start}")
+    return current if current is not None else previous
+
+
 def _paginate_history_pages(
     cfg: _HistoryFetchConfig,
 ) -> tuple[list[dict[str, Any]], list[str], int, list[dict[str, Any]]]:
@@ -468,9 +476,7 @@ def _paginate_history_pages(
         payload, raw_hash, source = _load_or_fetch_history_page(cfg, start)
         page_cache.append({"start": start, "source": source})
         block_rows = history_rows(payload.get("history"), "history", error=cfg.error)
-        page_total = _parse_history_total(payload, cfg.error)
-        if page_total is not None:
-            total = page_total
+        total = _consistent_history_total(payload, total, cfg, start)
         if not block_rows:
             if cfg.allow_empty and page == 0:
                 hashes.append(raw_hash)

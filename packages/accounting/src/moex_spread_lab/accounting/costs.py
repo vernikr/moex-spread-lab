@@ -8,6 +8,7 @@ unevidenced, so pricing fails closed instead of charging zero.
 from __future__ import annotations
 
 import math
+import re
 from datetime import date
 from typing import Any, NamedTuple, cast
 
@@ -27,15 +28,40 @@ TAKER_RATE_PERCENT = {
     "perpetual_stock": 0.03000,
     "digital": 0.04000,
 }
+# Base instrument code -> MOEX tariff group. Expiry codes are stripped before lookup so
+# a new quarterly series (SiH7, EuH7, MMH7, S2H7) never needs a code change.
 CONTRACT_GROUP = {
-    **dict.fromkeys(("CNYRUBF", "CRZ6", "CRH7", "USDRUBF", "SiZ6", "EURRUBF", "EuZ6"), "currency"),
-    **dict.fromkeys(("GLDRUBF", "GLZ6", "GLH7", "SLVRUBF", "S2Z6"), "commodity"),
-    **dict.fromkeys(("IMOEXF", "MMZ6"), "index"),
-    **dict.fromkeys(("SBERF", "GAZPF"), "perpetual_stock"),
-    **dict.fromkeys(("SRZ6", "GZZ6"), "stock"),
-    **dict.fromkeys(("RGBIF", "RBZ6"), "interest"),
-    **dict.fromkeys(("BTCUSDF", "BTZ6"), "digital"),
+    "CNYRUBF": "currency",
+    "USDRUBF": "currency",
+    "EURRUBF": "currency",
+    "Si": "currency",
+    "CR": "currency",
+    "Eu": "currency",
+    "GLDRUBF": "commodity",
+    "SLVRUBF": "commodity",
+    "GL": "commodity",
+    "SV": "commodity",
+    "S2": "commodity",
+    "IMOEXF": "index",
+    "MM": "index",
+    "SBERF": "perpetual_stock",
+    "GAZPF": "perpetual_stock",
+    "SR": "stock",
+    "GZ": "stock",
+    "RGBIF": "interest",
+    "RB": "interest",
+    "BTCUSDF": "digital",
+    "BT": "digital",
 }
+_EXPIRY_CODE = re.compile(r"[FGHJKMNQUVXZ]\d{1,2}$")
+
+
+def tariff_group(secid: str) -> str | None:
+    """Tariff group of a futures secid (`SiH7`) or perpetual (`SBERF`); None fails closed."""
+    base = secid
+    while (expiry := _EXPIRY_CODE.search(base)) is not None:
+        base = base[: expiry.start()]
+    return CONTRACT_GROUP.get(base)
 
 
 def tariff_profile(
@@ -157,7 +183,7 @@ def side_cost(
     exchange = slippage = 0.0
     for position, (contract, price) in enumerate(legs):
         secid, tick_value, tick_size, leg_price = _leg_values(contract, price)
-        group = contract.get("tariff_group") or CONTRACT_GROUP.get(secid)
+        group = contract.get("tariff_group") or tariff_group(secid)
         if group is None:
             raise W0Error(f"no tariff group assigned for {secid}")
         if group not in rates:

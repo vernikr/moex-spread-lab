@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from moex_spread_lab.accounting.costs import (
-    CONTRACT_GROUP,
     TAKER_RATE_PERCENT,
+    tariff_group,
 )
 from moex_spread_lab.accounting.costs import (
     cost_totals as _cost_totals,
@@ -106,8 +106,8 @@ def _window_block(spec: PairPayloadSpec, near: str, far: str, timeframe: str) ->
 
 
 def _contract_block(spec: PairPayloadSpec, near: str, far: str) -> dict[str, Any]:
-    near_group = CONTRACT_GROUP.get(near)
-    common_group = near_group if near_group == CONTRACT_GROUP.get(far) else "mixed"
+    near_group = tariff_group(near)
+    common_group = near_group if near_group == tariff_group(far) else "mixed"
     terms = spec.terms[near]
     return {
         "point_value_rub": point_value(terms) if terms else None,

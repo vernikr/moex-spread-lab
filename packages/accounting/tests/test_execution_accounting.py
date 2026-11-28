@@ -17,6 +17,7 @@ from moex_spread_lab.accounting.costs import (
     cost_totals,
     lqdt_overlay_values,
     side_cost,
+    tariff_group,
     tariff_profile,
 )
 from moex_spread_lab.core.w0 import W0Error
@@ -194,6 +195,40 @@ def test_side_cost_rejects_invalid_legs_and_quantities(
         profile = {**profile, "slippage_ticks": float("nan")}
     with pytest.raises(W0Error, match=message):
         side_cost(profile, legs, quantity, as_of="2026-11-02")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("secid", "group"),
+    [
+        ("SiH7", "currency"),
+        ("EuH7", "currency"),
+        ("MMH7", "index"),
+        ("S2H7", "commodity"),
+        ("SRH7", "stock"),
+        ("RBH7", "interest"),
+        ("SiZ6", "currency"),
+        ("SBERF", "perpetual_stock"),
+        ("GAZPF", "perpetual_stock"),
+        ("BTCUSDF", "digital"),
+        ("IMOEXF", "index"),
+        ("CNYRUBF", "currency"),
+        ("BRX6", None),
+    ],
+)
+def test_tariff_group_covers_current_and_next_quarter_series(secid: str, group: str | None) -> None:
+    assert tariff_group(secid) == group
+
+
+def test_side_cost_prices_a_next_quarter_series_without_a_code_change() -> None:
+    profile = tariff_profile()
+    for secid in ("SiH7", "EuH7", "MMH7", "S2H7"):
+        cost = side_cost(
+            profile,
+            [({"secid": secid, "tick_value": 1.0, "tick_size": 1.0}, 100.0)],
+            1,
+            as_of="2026-11-02",
+        )
+        assert cost["exchange_clearing"] > 0
 
 
 def test_cost_totals_keeps_every_component_or_fails_closed() -> None:

@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from scripts import architecture_gate
 
-from moex_spread_lab.core.w0 import scan_secrets
+from moex_spread_lab.core.w0 import W0Error, scan_secrets
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -141,7 +141,8 @@ def test_secret_scan_skips_clean_large_and_untracked_files(tmp_path: Path) -> No
     (tmp_path / "clean.txt").write_text("nothing sensitive here\n", encoding="utf-8")
     (tmp_path / "large.bin").write_bytes(b"ghp_" + b"a" * 36 + b"\n" + b"x" * (5 * 1024 * 1024))
     assert scan_secrets(tmp_path) == []
-    assert scan_secrets(tmp_path, tracked_only=True) == []  # not a repository: nothing tracked
+    with pytest.raises(W0Error):  # not a repository: the gate must not report passed
+        scan_secrets(tmp_path, tracked_only=True)
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     (tmp_path / "sample.txt").write_bytes(b"ghp_" + b"a" * 36)
     assert scan_secrets(tmp_path, tracked_only=True) == []  # untracked files are ignored

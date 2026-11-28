@@ -162,7 +162,13 @@ class Terms:
         else:
             legs = list(zip(self.legs, (near, far), strict=True))
             margin = self.margin
-        return margin, side_cost(self.profile, legs, 1, native_spread=self.native_order)
+        return margin, side_cost(
+            self.profile,
+            legs,
+            1,
+            as_of=str(self.rows[index]["date"]),
+            native_spread=self.native_order,
+        )
 
     def posted_margin(self, index: int, quantity: int) -> float:
         if self.native:

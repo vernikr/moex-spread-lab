@@ -78,8 +78,8 @@ class CalendarSpreadTests(unittest.TestCase):
         leg = {"secid": "SR", "tariff_group": "stock", "tick_value": 1.0, "tick_size": 1.0}
         profile = tariff_profile(2.0)
         legs = [(leg, 30000.0), (leg, 31000.0)]
-        separate = side_cost(profile, legs, 1)
-        native = side_cost(profile, legs, 1, native_spread=True)
+        separate = side_cost(profile, legs, 1, as_of="2026-11-01")
+        native = side_cost(profile, legs, 1, as_of="2026-11-01", native_spread=True)
         self.assertEqual(separate["slippage"], 4.0)
         self.assertEqual(native["slippage"], 2.0)
         self.assertEqual(separate["exchange_clearing"], native["exchange_clearing"])

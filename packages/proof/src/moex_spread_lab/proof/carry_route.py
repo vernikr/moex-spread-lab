@@ -142,6 +142,7 @@ def reference_costs(state: CarryWindowState) -> dict[str, float]:
         tariff_profile(float(spec.execution["slippage_ticks"])),
         [(leg_contracts[near], state.ref_near), (leg_contracts[far], state.ref_far)],
         1,
+        as_of=str(state.study["rows"][-1]["date"]),
     )
 
 

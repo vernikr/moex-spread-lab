@@ -157,7 +157,11 @@ def _cost_profile(
         if n_ref is None or f_ref is None:
             raise CarryStrategyError("tariff scenario requires settlement prices")
         tariff = tariff_profile(slip_ticks)
-        side = sum(side_cost(tariff, [(near_c, n_ref), (far_c, f_ref)], 1).values())
+        side = sum(
+            side_cost(
+                tariff, [(near_c, n_ref), (far_c, f_ref)], 1, as_of=str(last["date"])
+            ).values()
+        )
         return {
             **tariff,
             "entry_cost": _round(side),

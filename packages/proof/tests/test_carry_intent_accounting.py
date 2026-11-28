@@ -144,6 +144,7 @@ def test_replay_matches_native_cash_flows_on_real_study(tmp_path, quantity, pref
                 (contracts[pair["far"]], last["far_settle"]),
             ],
             1,
+            as_of=last["date"],
         ).values()
     )
     actual = replay_carry_intents(
@@ -206,16 +207,20 @@ def test_reference_cost_components_keep_scaling_and_rounding(monkeypatch):
             ),
             ref_near=100.0,
             ref_far=105.0,
+            study={"rows": [{"date": "2026-11-02"}]},
         ),
     )
     monkeypatch.setattr(carry_route, "load_contracts_for_side_cost", lambda *args: contracts)
     monkeypatch.setattr(carry_route, "tariff_profile", lambda slip: slip)
 
-    def side_cost(profile, legs, quantity):
-        calls.append((profile, legs, quantity))
+    def side_cost(profile, legs, quantity, *, as_of):
+        calls.append((profile, legs, quantity, as_of))
         return {"exchange": 0.004, "slippage": 0.005}
 
     monkeypatch.setattr(carry_route, "side_cost", side_cost)
     assert carry_route.reference_costs(state) == {"exchange": 0.004, "slippage": 0.005}
     assert _entry_costs(state) == {"exchange": 0.01, "slippage": 0.01}
-    assert calls == [(1.5, [(contracts["near"], 100.0), (contracts["far"], 105.0)], 1)] * 2
+    assert (
+        calls
+        == [(1.5, [(contracts["near"], 100.0), (contracts["far"], 105.0)], 1, "2026-11-02")] * 2
+    )

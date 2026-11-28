@@ -35,6 +35,7 @@ def _trade_blocks(
                 tariff_profile(slippage),
                 list(zip(contracts, (fill["near_price"], fill["far_price"]), strict=True)),
                 quantity,
+                as_of=str(fill["date"]),
             )
             if any(not math.isfinite(value) or value < 0 for value in costs.values()):
                 raise W0Error("Некорректные издержки пары.")

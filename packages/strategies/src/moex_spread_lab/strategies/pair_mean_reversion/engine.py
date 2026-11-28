@@ -149,7 +149,9 @@ def _close_trade(
     state.entry_signal_z = None
 
 
-def _exit_side_cost(ctx: SimContext, cur_legs: tuple[float, float]) -> dict[str, float] | None:
+def _exit_side_cost(
+    ctx: SimContext, cur_legs: tuple[float, float], date_key: str
+) -> dict[str, float] | None:
     """Tariff cost charged on the closing fill, or ``None`` when tariffs are off."""
     if not (ctx.tariff_costs and ctx.normalized_cost is not None):
         return None
@@ -158,6 +160,7 @@ def _exit_side_cost(ctx: SimContext, cur_legs: tuple[float, float]) -> dict[str,
         ctx.normalized_cost,
         [(ctx.near_contract, cur_near), (ctx.far_contract, cur_far)],
         ctx.params.quantity,
+        as_of=date_key,
     )
 
 
@@ -194,7 +197,7 @@ def _append_priced_trade(
     direction, entry_sp, exit_sp, sig_z = meta
     price_gross = _pnl_at(ctx, state, cur_near, cur_far)
     gross = price_gross + state.trade_funding
-    exit_bd = _exit_side_cost(ctx, cur_legs)
+    exit_bd = _exit_side_cost(ctx, cur_legs, date_key)
     breakdown = _round_trip_cost(ctx, state, date_key, exit_bd)
     cost = sum(breakdown.values()) if breakdown is not None else 0.0
     state.realized_gross += price_gross
@@ -266,6 +269,7 @@ def _open_position(
             ctx.normalized_cost,
             [(ctx.near_contract, fill_near), (ctx.far_contract, fill_far)],
             ctx.params.quantity,
+            as_of=str(state.entry_date),
         )
         state.entry_breakdown = entry_bd
         state.realized_costs += sum(entry_bd.values())

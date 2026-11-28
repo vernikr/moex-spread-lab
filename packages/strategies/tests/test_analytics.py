@@ -48,7 +48,7 @@ class HistoricalTariffGroupTests(unittest.TestCase):
             (root / "historical-contracts.json").write_text(json.dumps(historical))
             terms, _ = load_contracts(root / "contracts.json", "PERP", "OLDQ")
             self.assertEqual(terms["OLDQ"]["tariff_group"], "interest")
-            result = side_cost(tariff_profile(), [(terms["OLDQ"], 100)], 1)
+            result = side_cost(tariff_profile(), [(terms["OLDQ"], 100)], 1, as_of="2026-11-01")
             self.assertGreater(result["exchange_clearing"], 0)
 
 

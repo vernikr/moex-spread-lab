@@ -59,15 +59,22 @@ def _contracts(tmp_path: Path) -> Path:
 def test_costs_tariff_native_spread_and_totals() -> None:
     profile = tariff_profile(2.0)
     assert profile["broker_fee"] == 0.0
-    cost = side_cost(profile, [(NEAR, 300.0)], 3)
+    cost = side_cost(profile, [(NEAR, 300.0)], 3, as_of="2026-11-02")
     assert cost == {"exchange_clearing": pytest.approx(27.0), "broker": 0.0, "slippage": 6.0}
 
-    native = side_cost(profile, [(NEAR, 300.0), (FAR, 305.0)], 2, native_spread=True)
-    two_leg = side_cost(profile, [(NEAR, 300.0), (FAR, 305.0)], 2)
+    native = side_cost(
+        profile, [(NEAR, 300.0), (FAR, 305.0)], 2, as_of="2026-11-02", native_spread=True
+    )
+    two_leg = side_cost(profile, [(NEAR, 300.0), (FAR, 305.0)], 2, as_of="2026-11-02")
     assert native["exchange_clearing"] == pytest.approx(two_leg["exchange_clearing"])
     assert (native["slippage"], two_leg["slippage"]) == (4.0, 12.0)
 
-    custom = side_cost(profile, [({**NEAR, "secid": "X", "tariff_group": "currency"}, 10.0)], 1)
+    custom = side_cost(
+        profile,
+        [({**NEAR, "secid": "X", "tariff_group": "currency"}, 10.0)],
+        1,
+        as_of="2026-11-02",
+    )
     assert custom["exchange_clearing"] == pytest.approx(0.0462)
     assert cost_totals(
         [{"entry": {"costs": cost}, "exit": {"costs": cost}}, {"entry": {}, "exit": {}}]
@@ -78,12 +85,57 @@ def test_costs_tariff_native_spread_and_totals() -> None:
     }
 
 
+def test_costs_honour_the_profile_rates_and_broker_fee() -> None:
+    profile = tariff_profile(1.0, broker_fee=5.0, broker_fee_effective_to="2027-06-30")
+    profile["taker_rate_percent"] = {"currency": 99.0}
+    cost = side_cost(
+        profile,
+        [({"secid": "SiZ6", "tick_value": 1.0, "tick_size": 1.0}, 100000.0)],
+        2,
+        as_of="2026-11-02",
+    )
+    assert cost["exchange_clearing"] == pytest.approx(2 * 100000.0 * 99.0 / 100)
+    assert cost["broker"] == pytest.approx(10.0)
+    two_leg = side_cost(
+        profile,
+        [({"secid": "SiZ6", "tick_value": 1.0, "tick_size": 1.0}, 1.0)] * 2,
+        3,
+        as_of="2026-11-02",
+    )
+    assert two_leg["broker"] == pytest.approx(30.0)
+
+
+def test_costs_fail_closed_outside_the_broker_fee_window() -> None:
+    profile = tariff_profile(1.0)
+    assert side_cost(profile, [(NEAR, 300.0)], 1, as_of="2026-12-31")["broker"] == 0.0
+    with pytest.raises(W0Error, match="broker fee assumption expires"):
+        side_cost(profile, [(NEAR, 300.0)], 1, as_of="2027-01-01")
+    with pytest.raises(W0Error, match="ISO trade date"):
+        side_cost(profile, [(NEAR, 300.0)], 1, as_of="not-a-date")
+    with pytest.raises(W0Error, match="taker_rate_percent"):
+        side_cost({**profile, "taker_rate_percent": {}}, [(NEAR, 300.0)], 1, as_of="2026-11-02")
+    with pytest.raises(W0Error, match="no taker rate"):
+        side_cost(
+            {**profile, "taker_rate_percent": {"stock": 1.0}},
+            [({**NEAR, "tariff_group": "currency"}, 1.0)],
+            1,
+            as_of="2026-11-02",
+        )
+    for bad_fee, bad_window in (
+        (-1.0, "2026-12-31"),
+        (float("nan"), "2026-12-31"),
+        (0.0, "31.12.2026"),
+    ):
+        with pytest.raises(W0Error):
+            tariff_profile(1.0, broker_fee=bad_fee, broker_fee_effective_to=bad_window)
+
+
 @pytest.mark.parametrize("bad", [-1, 10.5, True, "1"])
 def test_costs_rejects_invalid_slippage_and_unknown_secid(bad: object) -> None:
     with pytest.raises(W0Error):
         tariff_profile(bad)
     with pytest.raises(W0Error):
-        side_cost(tariff_profile(), [({**NEAR, "secid": "XX"}, 1.0)], 1)
+        side_cost(tariff_profile(), [({**NEAR, "secid": "XX"}, 1.0)], 1, as_of="2026-11-02")
 
 
 def test_lqdt_overlay_compounds_free_cash_and_flags_negative_only() -> None:

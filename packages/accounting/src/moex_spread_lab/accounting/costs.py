@@ -1,8 +1,14 @@
-"""Published MOEX derivatives taker tariff, zero VTB broker fee, slippage, and LQDT overlay."""
+"""Published MOEX derivatives taker tariff, zero VTB broker fee, slippage, and LQDT overlay.
+
+Broker fee unit: RUB per contract per side, as published by the VTB tariff in force
+until `broker_fee_effective_to` (A-09). Beyond that date the zero-fee promotion is
+unevidenced, so pricing fails closed instead of charging zero.
+"""
 
 from __future__ import annotations
 
-from typing import Any
+from datetime import date
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import W0Error
 
@@ -29,23 +35,72 @@ CONTRACT_GROUP = {
 }
 
 
-def tariff_profile(slippage_ticks: object = 1.0) -> dict[str, Any]:
+def tariff_profile(
+    slippage_ticks: object = 1.0,
+    *,
+    broker_fee: object = 0.0,
+    broker_fee_effective_to: object = "2026-12-31",
+) -> dict[str, Any]:
     if (
         not isinstance(slippage_ticks, (int, float))
         or isinstance(slippage_ticks, bool)
         or not 0 <= slippage_ticks <= 10
     ):
         raise W0Error("slippage must be 0–10 ticks per leg and side")
+    if (
+        not isinstance(broker_fee, (int, float))
+        or isinstance(broker_fee, bool)
+        or not 0 <= broker_fee < float("inf")
+    ):
+        raise W0Error("broker fee must be a finite non-negative RUB amount per contract")
+    if not isinstance(broker_fee_effective_to, str):
+        raise W0Error("broker fee window must be an ISO date")
+    try:
+        date.fromisoformat(broker_fee_effective_to)
+    except ValueError as exc:
+        raise W0Error("broker fee window must be an ISO date") from exc
     return {
         "schema_version": COST_SCHEMA,
         "scenario": "moex_taker_tariff_zero_broker",
         "status": "published_tariff_group_assignment_partly_assumed",
         "slippage_ticks": float(slippage_ticks),
-        "broker_fee": 0.0,
-        "broker_fee_effective_to": "2026-12-31",
+        "broker_fee": float(broker_fee),
+        "broker_fee_unit": "rub_per_contract_per_side",
+        "broker_fee_effective_to": broker_fee_effective_to,
         "taker_rate_percent": TAKER_RATE_PERCENT,
         "source": TARIFF_SOURCE,
     }
+
+
+def _taker_rates(profile: dict[str, Any]) -> dict[str, float]:
+    raw = profile.get("taker_rate_percent")
+    if not isinstance(raw, dict) or not raw:
+        raise W0Error("cost profile is missing taker_rate_percent")
+    rates: dict[str, float] = {}
+    for group, rate in cast(dict[str, Any], raw).items():
+        if (
+            not isinstance(rate, (int, float))
+            or isinstance(rate, bool)
+            or not 0 <= rate < float("inf")
+        ):
+            raise W0Error(f"taker rate for {group} must be a finite non-negative percent")
+        rates[str(group)] = float(rate)
+    return rates
+
+
+def _broker_fee(profile: dict[str, Any], as_of: date) -> float:
+    fee = profile.get("broker_fee")
+    window_end = profile.get("broker_fee_effective_to")
+    if not isinstance(fee, (int, float)) or isinstance(fee, bool) or not 0 <= fee < float("inf"):
+        raise W0Error("broker fee must be a finite non-negative RUB amount per contract")
+    if not isinstance(window_end, str):
+        raise W0Error("cost profile is missing the broker fee window")
+    if as_of > date.fromisoformat(window_end):
+        raise W0Error(
+            f"broker fee assumption expires {window_end}; supply an evidenced tariff_profile "
+            "with an explicit broker_fee and broker_fee_effective_to"
+        )
+    return float(fee)
 
 
 def side_cost(
@@ -53,19 +108,32 @@ def side_cost(
     legs: list[tuple[dict[str, Any], float]],
     quantity: int,
     *,
+    as_of: str,
     native_spread: bool = False,
 ) -> dict[str, float]:
     """Native calendar-spread orders pay tariff on both legs but cross one spread book for slippage."""
+    try:
+        trade_date = date.fromisoformat(str(as_of)[:10])
+    except ValueError as exc:
+        raise W0Error("side cost requires an ISO trade date") from exc
+    rates = _taker_rates(profile)
+    broker_fee = _broker_fee(profile, trade_date)
     exchange = slippage = 0.0
     for position, (contract, price) in enumerate(legs):
         group = contract.get("tariff_group") or CONTRACT_GROUP.get(contract["secid"])
         if group is None:
             raise W0Error(f"no tariff group assigned for {contract['secid']}")
+        if group not in rates:
+            raise W0Error(f"cost profile has no taker rate for {group}")
         value = price * contract["tick_value"] / contract["tick_size"]
-        exchange += value * TAKER_RATE_PERCENT[group] / 100 * quantity
+        exchange += value * rates[group] / 100 * quantity
         if not native_spread or position == 0:
             slippage += profile["slippage_ticks"] * contract["tick_value"] * quantity
-    return {"exchange_clearing": exchange, "broker": 0.0, "slippage": slippage}
+    return {
+        "exchange_clearing": exchange,
+        "broker": broker_fee * quantity * len(legs),
+        "slippage": slippage,
+    }
 
 
 def cost_totals(trades: list[dict[str, Any]]) -> dict[str, float]:

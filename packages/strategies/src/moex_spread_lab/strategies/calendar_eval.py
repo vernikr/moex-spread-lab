@@ -178,7 +178,7 @@ def trade_costs(
         ({**a, "secid": "near"}, float(row["near_close"])),
         ({**a, "secid": "far"}, float(row["far_close"])),
     ]
-    return side_cost(profile, b, quantity, native_spread=native_spread)
+    return side_cost(profile, b, quantity, as_of=str(row["date"]), native_spread=native_spread)
 
 
 def _benchmark_price_at(

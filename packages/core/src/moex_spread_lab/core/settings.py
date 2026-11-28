@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import math
 import os
-from collections.abc import Callable, Iterable
+import threading
+from collections.abc import Callable, Generator, Iterable
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -119,6 +122,23 @@ def _validated_bool(key: str, value: object) -> bool:
     return value
 
 
+# One process-wide lock guards the read-modify-write cycle inside save_settings;
+# a sidecar flock covers other processes (e.g. a second web worker). Readers need no
+# lock: the temp-file + os.replace publish is atomic.
+_SETTINGS_LOCK = threading.Lock()
+
+
+@contextmanager
+def _settings_file_lock(path: Path) -> Generator[None]:
+    lock_path = path.with_name(path.name + ".lock")
+    with lock_path.open("a", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 _VALIDATORS: dict[str, Callable[[object], object]] = {
     "validation_percent": validation_percent,
     "initial_capital_rub": _validated_initial_capital,
@@ -171,25 +191,41 @@ def read_settings(root: Path) -> dict[str, float | bool | str]:
 
 def save_settings(root: Path, body: object) -> dict[str, float | bool | str]:
     patch = _validated_patch(body)
-    # A full valid submission can also repair corrupt settings. Legacy split-only
-    # clients and partial updates must preserve every other saved preference.
-    settings = cast(
-        dict[str, object],
-        patch
-        if patch.keys() == ResearchSettings().metadata().keys()
-        else read_settings(root) | patch,
-    )
     path = settings_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    # A sibling temporary file keeps replacement atomic for concurrent readers.
-    with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as handle:
-        temporary = Path(handle.name)
-        try:
-            handle.write(json.dumps(settings) + "\n")
-            handle.close()
-            os.replace(temporary, path)
-        finally:
-            temporary.unlink(missing_ok=True)
+    with _SETTINGS_LOCK, _settings_file_lock(path):
+        # A full valid submission can also repair corrupt settings. Legacy split-only
+        # clients and partial updates must preserve every other saved preference.
+        settings = cast(
+            dict[str, object],
+            patch
+            if patch.keys() == ResearchSettings().metadata().keys()
+            else read_settings(root) | patch,
+        )
+        # A sibling temporary file keeps replacement atomic for concurrent readers.
+        with NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, delete=False
+        ) as handle:
+            temporary = Path(handle.name)
+            try:
+                handle.write(json.dumps(settings) + "\n")
+                # Flush and fsync before replace, and the directory after it: without
+                # the syncs a crash can leave an empty or missing settings file.
+                handle.flush()
+                os.fsync(handle.fileno())
+                handle.close()
+                os.replace(temporary, path)
+                try:
+                    dir_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+                except OSError:
+                    dir_fd = None
+                if dir_fd is not None:
+                    try:
+                        os.fsync(dir_fd)
+                    finally:
+                        os.close(dir_fd)
+            finally:
+                temporary.unlink(missing_ok=True)
     return cast(dict[str, float | bool | str], settings)
 
 

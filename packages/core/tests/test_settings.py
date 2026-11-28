@@ -1,5 +1,7 @@
 import tempfile
+import threading
 import unittest
+import unittest.mock
 from pathlib import Path
 
 import pytest
@@ -32,6 +34,42 @@ class GlobalPeriodTests(unittest.TestCase):
         for dates, percent in (([], 0), (["d"], 1), (["d"], 50)):
             with self.assertRaisesRegex(W0Error, "Недостаточно наблюдений"):
                 EvaluationSplit.from_dates(dates, percent)
+
+    def test_save_settings_serializes_concurrent_partial_updates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for _ in range(30):
+                # Reset to defaults between rounds to expose the lost update.
+                base = save_settings(root, {"slippage_ticks": 1.0, "initial_capital_rub": 30000.0})
+                assert base["slippage_ticks"] == 1.0
+                barrier = threading.Barrier(2)
+
+                def worker(patch: dict[str, object], barrier: threading.Barrier = barrier) -> None:
+                    barrier.wait(timeout=5)
+                    save_settings(root, patch)
+
+                first = threading.Thread(target=worker, args=({"slippage_ticks": 3.0},))
+                second = threading.Thread(target=worker, args=({"initial_capital_rub": 50000.0},))
+                first.start()
+                second.start()
+                first.join(timeout=10)
+                second.join(timeout=10)
+                final = read_settings(root)
+                self.assertEqual(final["slippage_ticks"], 3.0)
+                self.assertEqual(final["initial_capital_rub"], 50000.0)
+
+    def test_save_settings_fsyncs_before_replace(self):
+        import moex_spread_lab.core.settings as settings_module
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            unittest.mock.patch.object(
+                settings_module.os, "fsync", wraps=settings_module.os.fsync
+            ) as fsync_mock,
+        ):
+            root = Path(directory)
+            save_settings(root, {"slippage_ticks": 2.5})
+            self.assertGreaterEqual(fsync_mock.call_count, 1)
 
     def test_from_dates_rejects_unsorted_and_duplicate_dates(self):
         for dates in (
@@ -157,4 +195,4 @@ def test_failed_atomic_replace_preserves_settings_and_removes_temp(tmp_path, mon
     with pytest.raises(OSError, match="replace failed"):
         save_settings(tmp_path, {"validation_percent": 10})
     assert read_settings(tmp_path) == saved
-    assert list(path.parent.iterdir()) == [path]
+    assert sorted(path.parent.iterdir()) == sorted([path, path.with_name(path.name + ".lock")])

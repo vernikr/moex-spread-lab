@@ -7,6 +7,7 @@ import json
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -98,6 +99,140 @@ def test_candle_interval_labels_match_iss_durations():
         assert RefreshTarget("TEST", interval).timeframe == label
 
 
+@pytest.mark.parametrize("endpoint", ["candles", "history"])
+def test_current_day_pages_are_refetched_and_reported(monkeypatch, tmp_path, endpoint):
+    from moex_spread_lab.data.iss import iss_http
+
+    day = "2026-11-26"
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: datetime(2026, 11, 26, 12, tzinfo=UTC))
+    calls = []
+
+    def opener(request, timeout):
+        calls.append(1)
+        count = 2 if len(calls) == 1 else 4
+        if endpoint == "candles":
+            payload = candles(
+                [
+                    [1, 1, 1, 1, 1, 1, f"{day} {h:02d}:00:00", f"{day} {h:02d}:59:59"]
+                    for h in range(count)
+                ]
+            )
+        else:
+            payload = {
+                "history": {
+                    "columns": ["TRADEDATE", "CLOSE"],
+                    "data": [[f"2026-11-{20 + h}", 1] for h in range(count)],
+                }
+            }
+        return _Response(json.dumps(payload).encode())
+
+    def run():
+        if endpoint == "candles":
+            return fetch_candle_series(
+                secid="TEST",
+                interval=60,
+                from_date=day,
+                till_date=day,
+                cache_dir=tmp_path,
+                delay_seconds=0,
+                opener=opener,
+            )
+        return iss_http.fetch_history(
+            "TEST", day, day, cache_dir=tmp_path, delay_seconds=0, opener=opener
+        )
+
+    first, second = run(), run()
+    assert (first["row_count"], second["row_count"]) == (2, 4)
+    assert len(calls) == 2
+    assert first["page_cache"] == [{"start": 0, "source": "network"}]
+    assert second["page_cache"] == [{"start": 0, "source": "network"}]
+
+
+@pytest.mark.parametrize("endpoint", ["candles", "history"])
+def test_page_cached_during_session_is_refetched_after_rollover(monkeypatch, tmp_path, endpoint):
+    from moex_spread_lab.data.iss import iss_http
+
+    clock = [datetime(2026, 11, 26, 20, tzinfo=UTC)]
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: clock[0])
+    calls = []
+
+    def opener(request, timeout):
+        calls.append(1)
+        count = 1 if len(calls) == 1 else 2
+        if endpoint == "candles":
+            payload = candles(
+                [
+                    [1, 1, 1, 1, 1, 1, f"2026-11-26 {h:02d}:00:00", f"2026-11-26 {h:02d}:59:59"]
+                    for h in range(count)
+                ]
+            )
+        else:
+            payload = {
+                "history": {
+                    "columns": ["TRADEDATE", "CLOSE"],
+                    "data": [[f"2026-11-{20 + h}", 1] for h in range(count)],
+                }
+            }
+        return _Response(json.dumps(payload).encode())
+
+    def run():
+        args = ("2026-11-26", "2026-11-26")
+        options = {"cache_dir": tmp_path, "delay_seconds": 0, "opener": opener}
+        if endpoint == "candles":
+            return fetch_candle_series(
+                secid="TEST", interval=60, from_date=args[0], till_date=args[1], **options
+            )
+        return iss_http.fetch_history("TEST", *args, **options)
+
+    assert run()["row_count"] == 1
+    clock[0] += timedelta(hours=5)
+    refreshed = run()
+    assert refreshed["row_count"] == 2
+    assert refreshed["page_cache"][0]["source"] == "network"
+    assert run()["page_cache"][0]["source"] == "cache"
+    assert len(calls) == 2
+
+
+def test_offline_history_rejects_missing_and_unknown_vintage_without_network(tmp_path):
+    from moex_spread_lab.data.iss import iss_http
+
+    def no_network(*args, **kwargs):
+        pytest.fail("offline mode must not attempt a network request")
+
+    args = ("TEST", "2026-01-01", "2026-01-02")
+    kwargs = {"cache_dir": tmp_path, "cache_only": True, "opener": no_network}
+    with pytest.raises(iss_http.IssHistoryError, match="missing, expired or unverified"):
+        iss_http.fetch_history(*args, **kwargs)
+    path = tmp_path / "TEST-2026-01-01-2026-01-02-0.json"
+    path.write_text(
+        json.dumps(
+            {
+                "url": iss_http.history_url(*args, 0),
+                "payload": {"history": {"columns": ["TRADEDATE"], "data": [["2026-01-01"]]}},
+            }
+        )
+    )
+    with pytest.raises(iss_http.IssHistoryError, match="missing, expired or unverified"):
+        iss_http.fetch_history(*args, **kwargs)
+
+
+def test_cache_expiry_and_capture_date_are_conservative(monkeypatch):
+    from moex_spread_lab.data.iss import iss_http
+
+    now = datetime(2026, 11, 28, 12, tzinfo=UTC)
+    monkeypatch.setattr(iss_http, "_cache_now", lambda: now)
+    recent = (now - timedelta(hours=1)).isoformat()
+    assert iss_http.cache_is_fresh({"cached_at": recent}, "2026-11-27")
+    assert not iss_http.cache_is_fresh({"cached_at": recent}, "2026-11-28")
+    assert not iss_http.cache_is_fresh({"cached_at": recent}, "2026-11-29")
+    assert not iss_http.cache_is_fresh(
+        {"cached_at": (now - timedelta(days=2)).isoformat()}, "2026-11-20"
+    )
+    assert not iss_http.cache_is_fresh({"cached_at": "2026-11-27T12:00:00+00:00"}, "2026-11-27")
+    assert not iss_http.cache_is_fresh({}, "2026-11-20")
+    assert not iss_http.cache_is_fresh({"cached_at": "invalid"}, "2026-11-20")
+
+
 def test_candle_cache_keeps_distinct_date_chunks_and_reuses_them(tmp_path):
     calls = []
 
@@ -169,7 +304,15 @@ def test_quarterly_cached_page_uses_current_timeframe(tmp_path):
     url = candles_url("https://iss.moex.com", "RFUD", "TEST", 4, "2026-01-01", "2026-03-31", 0)
     path = tmp_path / "TEST" / "4" / "page-000000.json"
     path.parent.mkdir(parents=True)
-    path.write_text(json.dumps({"url": url, "rows": [{"begin": "2026-01-01", "timeframe": "4h"}]}))
+    path.write_text(
+        json.dumps(
+            {
+                "url": url,
+                "cached_at": datetime.now(UTC).isoformat(),
+                "rows": [{"begin": "2026-01-01", "timeframe": "4h"}],
+            }
+        )
+    )
 
     def no_network(*args, **kwargs):
         raise AssertionError("cache should be reused")
@@ -679,7 +822,16 @@ class IssHistoryContractTests(unittest.TestCase):
             first = fetch_history("TEST", "2026-01-01", "2026-02-01", **kwargs)
             second = fetch_history("TEST", "2026-01-01", "2026-02-01", **kwargs)
         self.assertEqual(calls, [0, 100])
-        self.assertEqual(first, second)
+        self.assertEqual(first["rows"], second["rows"])
+        self.assertEqual(first["source"], second["source"])
+        self.assertEqual(
+            first["page_cache"],
+            [{"start": 0, "source": "network"}, {"start": 100, "source": "network"}],
+        )
+        self.assertEqual(
+            second["page_cache"],
+            [{"start": 0, "source": "cache"}, {"start": 100, "source": "cache"}],
+        )
         self.assertEqual(first["page_count"], 2)
         self.assertEqual(first["row_count"], 101)
         self.assertEqual(first["rows"][99]["CLOSE"], 999)

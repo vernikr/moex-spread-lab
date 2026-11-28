@@ -50,12 +50,17 @@ mirror in lockstep:
 
 - a first dataset (or `--full-refresh`) requires `--from-date`; incremental
   runs derive the start from the stored watermark minus `--overlap-sessions`
-  (default 5) and make zero network requests when the watermark already
-  reaches `--till-date`;
+  (default 5). A daily target or a watermark later than `--till-date` is skipped;
+  a same-date intraday watermark re-fetches the overlap and bypasses the page
+  cache for the final chunk;
 - fetches are bounded (`--chunk-days`, `--workers`, `--retries`); chunks merge
   on the candle `begin` key, sort deterministically and publish atomically
   under an exclusive per-dataset writer lock, then re-run the
   legacy-versus-Parquet verification;
+- ISS candle and history page caches are bypassed for ranges reaching the
+  current Moscow date; historical pages expire after 24 hours and require a
+  capture timestamp later than the requested end date. Unknown cache vintage
+  causes a refetch. Intake results list each page's `cache` or `network` source;
 - fresh ISS bodies are retained under `data-lake/raw/` with
   request/response/receipt-time SHA-256 identity; unpinned entries expire
   after a default 30-day TTL, and `--pin-raw` or `data-pin-raw --entry-id …`

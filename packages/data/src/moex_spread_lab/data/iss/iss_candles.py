@@ -20,6 +20,8 @@ from .iss_http import (
     DEFAULT_ISS_BASE_URL,
     IssIntakeError,
     atomic_cache_write,
+    cache_is_fresh,
+    cache_timestamp,
     fetch_json_with_raw,
     is_safe_component,
 )
@@ -109,7 +111,9 @@ def normalize_candles(
     return normalized
 
 
-def _try_load_cached_page(cache_path: Path | None, url: str) -> dict[str, Any] | None:
+def _try_load_cached_page(
+    cache_path: Path | None, url: str, till_date: str
+) -> dict[str, Any] | None:
     if cache_path is None or not cache_path.exists():
         return None
     try:
@@ -118,7 +122,11 @@ def _try_load_cached_page(cache_path: Path | None, url: str) -> dict[str, Any] |
         return None
     if isinstance(cached, dict):
         page = cast(dict[str, Any], cached)
-        if page.get("url") == url and isinstance(page.get("rows"), list):
+        if (
+            page.get("url") == url
+            and isinstance(page.get("rows"), list)
+            and cache_is_fresh(page, till_date)
+        ):
             return page
     return None
 
@@ -147,18 +155,22 @@ def _fetch_network_candle_page(
 
 def _load_or_fetch_page_rows(
     req: _CandleSeriesRequest, series_cache: Path | None, page: int, start: int
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], str]:
     url = _candles_url(
         req.base_url, req.board, req.secid, req.interval, req.from_date, req.till_date, start
     )
     digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
     cache_path = series_cache / f"page-{page:06d}-{digest}.json" if series_cache else None
-    page_result = _try_load_cached_page(cache_path, url)
+    page_result = _try_load_cached_page(cache_path, url, req.till_date)
     if page_result is None and series_cache is not None:
-        page_result = _try_load_cached_page(series_cache / f"page-{page:06d}.json", url)
+        page_result = _try_load_cached_page(
+            series_cache / f"page-{page:06d}.json", url, req.till_date
+        )
         if page_result is not None and cache_path is not None:
             atomic_cache_write(cache_path, page_result)
+    source = "cache" if page_result is not None else "network"
     if page_result is None:
+        request_started_at = cache_timestamp()
         payload, received_at, raw_sha256 = _fetch_network_candle_page(req, url)
         rows = normalize_candles(
             payload,
@@ -168,22 +180,32 @@ def _load_or_fetch_page_rows(
             received_at=received_at,
             raw_sha256=raw_sha256,
         )
-        page_result = {"url": url, "page": page, "start": start, "rows": rows}
+        page_result = {
+            "url": url,
+            "page": page,
+            "start": start,
+            "rows": rows,
+            "cached_at": request_started_at,
+        }
         if cache_path is not None:
             atomic_cache_write(cache_path, page_result)
     rows = cast(list[dict[str, Any]], page_result["rows"])
     if req.interval == 4:
-        return [{**row, "timeframe": CANDLE_INTERVAL_LABELS[4]} for row in rows]
-    return rows
+        rows = [{**row, "timeframe": CANDLE_INTERVAL_LABELS[4]} for row in rows]
+    return rows, source
 
 
-def _paginate_candle_rows(req: _CandleSeriesRequest) -> tuple[list[dict[str, Any]], int]:
+def _paginate_candle_rows(
+    req: _CandleSeriesRequest,
+) -> tuple[list[dict[str, Any]], int, list[dict[str, Any]]]:
     series_cache = req.cache_dir / req.secid / str(req.interval) if req.cache_dir else None
     all_rows: list[dict[str, Any]] = []
+    page_cache: list[dict[str, Any]] = []
     page = 0
     while True:
         start = page * CANDLE_PAGE_SIZE
-        rows = _load_or_fetch_page_rows(req, series_cache, page, start)
+        rows, source = _load_or_fetch_page_rows(req, series_cache, page, start)
+        page_cache.append({"start": start, "source": source})
         if rows and all_rows and rows[0]["begin"] <= all_rows[-1]["begin"]:
             raise IssIntakeError(
                 f"candle pagination did not advance: {req.secid} interval={req.interval} start={start}"
@@ -196,7 +218,7 @@ def _paginate_candle_rows(req: _CandleSeriesRequest) -> tuple[list[dict[str, Any
             or (req.max_pages is not None and page >= req.max_pages)
         ):
             break
-    return all_rows, page
+    return all_rows, page, page_cache
 
 
 def fetch_candle_series(  # noqa: PLR0913 - explicit keyword arguments preserve the public API
@@ -236,7 +258,7 @@ def fetch_candle_series(  # noqa: PLR0913 - explicit keyword arguments preserve 
         opener,
         raw_sink,
     )
-    all_rows, page = _paginate_candle_rows(req)
+    all_rows, page, page_cache = _paginate_candle_rows(req)
     deduped = {str(row["begin"]): row for row in all_rows}
     rows = [deduped[key] for key in sorted(deduped)]
     return {
@@ -248,6 +270,7 @@ def fetch_candle_series(  # noqa: PLR0913 - explicit keyword arguments preserve 
         "from": from_date,
         "till": till_date,
         "page_count": page,
+        "page_cache": page_cache,
         "raw_row_count": len(all_rows),
         "row_count": len(rows),
         "duplicate_count": len(all_rows) - len(rows),

@@ -1,7 +1,7 @@
 import json
 import math
 import unittest
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from moex_spread_lab.data import HISTORY_FIELDS, history_url
@@ -60,7 +60,14 @@ def _write_carry_history(root: Path, secid: str, days: list[date], close) -> Non
         },
     }
     path.write_text(
-        json.dumps({"url": url, "payload": payload, "raw_response_sha256": "ab" * 32}),
+        json.dumps(
+            {
+                "url": url,
+                "payload": payload,
+                "raw_response_sha256": "ab" * 32,
+                "cached_at": datetime.now(UTC).isoformat(),
+            }
+        ),
         encoding="utf-8",
     )
 

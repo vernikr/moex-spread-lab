@@ -54,7 +54,7 @@ def fetch_inputs(
     no rate-limit sleep, no thread pool and no outbound sockets.
     """
     needed = set(assets) | {FX_SOURCE[ASSETS[a]["fx"]] for a in assets if ASSETS[a].get("fx")}
-    extra: dict[str, Any] = {"opener": opener} if opener is not None else {}
+    extra: dict[str, Any] = {"opener": opener, "cache_only": True} if opener is not None else {}
     secids: list[str] = []
     for asset in sorted(needed):
         chain = contract_chain(asset)

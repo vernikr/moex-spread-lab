@@ -14,7 +14,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import ExitStack, closing, contextmanager
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -192,7 +192,14 @@ def write_calendar_history(root, secid, rows, *, response_hash):
     path = root / "data/spread-history-cache" / f"{secid}-{HISTORY_FROM}-{TILL}-0.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps({"url": url, "payload": payload, "raw_response_sha256": response_hash}),
+        json.dumps(
+            {
+                "url": url,
+                "payload": payload,
+                "raw_response_sha256": response_hash,
+                "cached_at": datetime.now(UTC).isoformat(),
+            }
+        ),
         encoding="utf-8",
     )
 

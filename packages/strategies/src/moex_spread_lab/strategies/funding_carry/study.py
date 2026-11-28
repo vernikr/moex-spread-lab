@@ -74,6 +74,7 @@ def fetch_history(
         opener=options.get("opener", urlopen),
         fields=options.get("fields", HISTORY_FIELDS),
         allow_empty=bool(options.get("allow_empty", False)),
+        cache_only=bool(options.get("cache_only", False)),
         error=CarryError,
     )
 

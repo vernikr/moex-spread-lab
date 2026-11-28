@@ -70,6 +70,13 @@ def _numeric_form(value):
 def _run_mixed_cohort(tmp_path) -> tuple[dict, list[dict]]:
     """Run the pinned mixed-cohort search on the synthetic fixture; return its events too."""
     fixture(tmp_path)
+    # Preserve the original byte-exact legacy fixture for this historical characterization.
+    # Freshness behavior is exercised separately by the ISS cache contract tests.
+    for directory in ("carry-history-cache", "spread-history-cache"):
+        for path in (tmp_path / "data" / directory).glob("*.json"):
+            doc = json.loads(path.read_text())
+            doc.pop("cached_at", None)
+            path.write_text(json.dumps(doc))
     save_settings(tmp_path, {"random_seed": 41, "validation_percent": 25})
     request = {
         "universe": "pair_screen",
@@ -82,7 +89,10 @@ def _run_mixed_cohort(tmp_path) -> tuple[dict, list[dict]]:
         ],
     }
     events: list[dict] = []
-    with patch.dict("os.environ", {"MOEX_PROOF_WORKERS": "1", "MOEX_OFFLINE_ONLY": "1"}):
+    with (
+        patch.dict("os.environ", {"MOEX_PROOF_WORKERS": "1", "MOEX_OFFLINE_ONLY": "1"}),
+        patch("moex_spread_lab.data.iss.iss_http.cache_is_fresh", return_value=True),
+    ):
         service = ProofService(tmp_path)
         try:
             result = research_run(service, request, optimize=True, on_progress=events.append)

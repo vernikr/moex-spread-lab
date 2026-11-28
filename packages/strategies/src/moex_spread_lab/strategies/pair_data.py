@@ -91,6 +91,7 @@ def history_source(
         end,
         cache_dir=history_cache_dir(root, pair_id),
         delay_seconds=0,
+        cache_only=True,
         opener=_offline_only,
     )
 

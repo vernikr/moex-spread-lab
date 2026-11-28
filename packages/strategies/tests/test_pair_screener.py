@@ -7,7 +7,7 @@ validation, and stable run ids across mean-reversion and funding-only branches.
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -133,6 +133,7 @@ def _write_fixture(root: Path) -> list[date]:
                     {
                         "url": history_url(secid, start, end, 0, HISTORY_FIELDS),
                         "payload": cached_payload,
+                        "cached_at": datetime.now(UTC).isoformat(),
                         "raw_response_sha256": ("cd" if secid == near else "ef") * 32,
                     }
                 ),

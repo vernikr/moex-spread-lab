@@ -12,10 +12,11 @@ import time
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote, urlencode
+from zoneinfo import ZoneInfo
 
 from moex_spread_lab.core.derived_cache import HashedJSONCache as _HashedJSONCache
 from moex_spread_lab.core.w0 import W0Error
@@ -85,6 +86,32 @@ def is_safe_component(value: Any) -> bool:
         and value not in {".", ".."}
         and bool(re.fullmatch(r"[A-Za-z0-9_.-]+", value))
     )
+
+
+def _cache_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def cache_timestamp() -> str:
+    return _cache_now().isoformat()
+
+
+def cache_is_fresh(page: dict[str, Any], till_date: str) -> bool:
+    try:
+        end = date.fromisoformat(till_date)
+        captured = datetime.fromisoformat(page["cached_at"])
+        if captured.tzinfo is None:
+            return False
+        now = _cache_now()
+        moscow = ZoneInfo("Europe/Moscow")
+        age = now - captured
+        return (
+            end < now.astimezone(moscow).date()
+            and captured.astimezone(moscow).date() > end
+            and timedelta(0) <= age < timedelta(days=1)
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def atomic_cache_write(path: Path, value: dict[str, Any]) -> None:
@@ -284,6 +311,7 @@ class _HistoryFetchConfig:
     opener: Callable[..., Any]
     fields: tuple[str, ...]
     allow_empty: bool
+    cache_only: bool
     error: type[W0Error]
 
 
@@ -340,7 +368,7 @@ def history_url(
 
 
 def _try_load_cached_history_page(
-    cache_path: Path | None, url: str
+    cache_path: Path | None, url: str, till_date: str
 ) -> tuple[dict[str, Any], str] | None:
     if cache_path is None:
         return None
@@ -354,7 +382,11 @@ def _try_load_cached_history_page(
             if isinstance(cached_raw, dict):
                 cached = (cast(dict[str, Any], cached_raw), "")
                 HISTORY_JSON_CACHE.put(cache_key, cached)
-        if cached is not None and cached[0].get("url") == url:
+        if (
+            cached is not None
+            and cached[0].get("url") == url
+            and cache_is_fresh(cached[0], till_date)
+        ):
             payload: object = cached[0].get("payload")
             raw_hash: object = cached[0].get("raw_response_sha256")
             if isinstance(payload, dict):
@@ -364,33 +396,40 @@ def _try_load_cached_history_page(
     return None
 
 
-def _load_or_fetch_history_page(cfg: _HistoryFetchConfig, start: int) -> tuple[dict[str, Any], str]:
+def _load_or_fetch_history_page(
+    cfg: _HistoryFetchConfig, start: int
+) -> tuple[dict[str, Any], str, str]:
     url = history_url(cfg.secid, cfg.from_date, cfg.till_date, start, cfg.fields)
     cache_path = (
         cfg.cache_dir / f"{cfg.secid}-{cfg.from_date}-{cfg.till_date}-{start}.json"
         if cfg.cache_dir
         else None
     )
-    cached = _try_load_cached_history_page(cache_path, url)
+    cached = _try_load_cached_history_page(cache_path, url, cfg.till_date)
     if cached is not None:
-        return cached
+        return *cached, "cache"
+    if cfg.cache_only:
+        raise cfg.error(
+            f"ISS history page missing, expired or unverified for {cfg.secid} at {start}; "
+            "run online intake first"
+        )
     if cfg.delay_seconds:
         time.sleep(cfg.delay_seconds)
+    request_started_at = cache_timestamp()
     payload, raw_hash = fetch_history_json(
         url, timeout=cfg.timeout, opener=cfg.opener, error=cfg.error
     )
     if cache_path is not None:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(
-            json.dumps(
-                {"url": url, "payload": payload, "raw_response_sha256": raw_hash},
-                ensure_ascii=False,
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="utf-8",
+        atomic_cache_write(
+            cache_path,
+            {
+                "url": url,
+                "payload": payload,
+                "raw_response_sha256": raw_hash,
+                "cached_at": request_started_at,
+            },
         )
-    return payload, raw_hash
+    return payload, raw_hash, "network"
 
 
 def _parse_history_total(payload: dict[str, Any], error: type[W0Error]) -> int | None:
@@ -406,13 +445,16 @@ def _parse_history_total(payload: dict[str, Any], error: type[W0Error]) -> int |
 
 def _paginate_history_pages(
     cfg: _HistoryFetchConfig,
-) -> tuple[list[dict[str, Any]], list[str], int]:
+) -> tuple[list[dict[str, Any]], list[str], int, list[dict[str, Any]]]:
     all_rows: list[dict[str, Any]] = []
     hashes: list[str] = []
+    page_cache: list[dict[str, Any]] = []
     page = 0
     total: int | None = None
     while total is None or len(all_rows) < total:
-        payload, raw_hash = _load_or_fetch_history_page(cfg, page * HISTORY_PAGE_SIZE)
+        start = page * HISTORY_PAGE_SIZE
+        payload, raw_hash, source = _load_or_fetch_history_page(cfg, start)
+        page_cache.append({"start": start, "source": source})
         block_rows = history_rows(payload.get("history"), "history", error=cfg.error)
         page_total = _parse_history_total(payload, cfg.error)
         if page_total is not None:
@@ -430,7 +472,7 @@ def _paginate_history_pages(
         raise cfg.error(
             f"Неполная история ISS {cfg.secid}: получено строк {len(all_rows)} из {total}."
         )
-    return all_rows, hashes, page
+    return all_rows, hashes, page, page_cache
 
 
 def fetch_history(  # noqa: PLR0913 - explicit keyword arguments preserve the public API
@@ -444,6 +486,7 @@ def fetch_history(  # noqa: PLR0913 - explicit keyword arguments preserve the pu
     opener: Callable[..., Any] = urllib.request.urlopen,
     fields: tuple[str, ...] = HISTORY_FIELDS,
     allow_empty: bool = False,
+    cache_only: bool = False,
     error: type[W0Error] = IssHistoryError,
 ) -> dict[str, Any]:
     if not secid or delay_seconds < 0:
@@ -458,9 +501,10 @@ def fetch_history(  # noqa: PLR0913 - explicit keyword arguments preserve the pu
         opener,
         fields,
         allow_empty,
+        cache_only,
         error,
     )
-    all_rows, hashes, page = _paginate_history_pages(cfg)
+    all_rows, hashes, page, page_cache = _paginate_history_pages(cfg)
     deduped = {str(row["TRADEDATE"]): row for row in all_rows if row.get("TRADEDATE")}
     rows = [deduped[key] for key in sorted(deduped)]
     if not rows and (not allow_empty or all_rows):
@@ -472,6 +516,7 @@ def fetch_history(  # noqa: PLR0913 - explicit keyword arguments preserve the pu
         "till": till_date,
         "row_count": len(rows),
         "page_count": page,
+        "page_cache": page_cache,
         "rows": rows,
         "source": {
             "endpoint": "MOEX ISS futures history",

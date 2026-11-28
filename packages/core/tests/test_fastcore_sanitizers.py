@@ -110,6 +110,75 @@ def test_ensure_compiled_uses_distinct_asan_artifact_and_scrubs_compiler_env(
     assert "ASAN_OPTIONS" not in env
 
 
+def test_failed_rebuild_drops_stale_binary_and_warns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    c_path = tmp_path / "_fastcore.c"
+    c_path.write_text("invalid c source;\n", encoding="utf-8")
+    stale_so = tmp_path / "_fastcore.so"
+    stale_so.write_bytes(b"stale-binary-from-older-source")
+
+    class _FakeCompleted:
+        returncode = 1
+        stderr = "error: expected identifier"
+
+    monkeypatch.setattr(loader.shutil, "which", lambda name: "/usr/bin/clang")
+    monkeypatch.setattr(loader.subprocess, "run", lambda *a, **k: _FakeCompleted())
+
+    with pytest.warns(RuntimeWarning, match="falling back to pure Python"):
+        so = loader._ensure_compiled(tmp_path, ".so", sanitize=False)
+
+    assert not so.exists(), "stale binary must not survive a failed rebuild"
+    assert (tmp_path / "_fastcore.so.failed").read_text(encoding="utf-8").strip()
+
+    # A second call for the same broken source must not rebuild (workers reuse the marker).
+    def _boom(*a: object, **k: object) -> object:
+        raise AssertionError("rebuild must be skipped for a known-bad fingerprint")
+
+    monkeypatch.setattr(loader.subprocess, "run", _boom)
+    so = loader._ensure_compiled(tmp_path, ".so", sanitize=False)
+    assert not so.exists()
+
+
+def test_freshness_is_content_hash_not_mtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    c_path = tmp_path / "_fastcore.c"
+    c_path.write_text("int x = 0;\n", encoding="utf-8")
+
+    class _FakeCompleted:
+        returncode = 0
+        stderr = ""
+
+    def _fake_run(cmd: list[str], **kwargs: object) -> _FakeCompleted:
+        Path(cmd[cmd.index("-o") + 1]).write_bytes(b"fresh-binary")
+        return _FakeCompleted()
+
+    monkeypatch.setattr(loader.shutil, "which", lambda name: "/usr/bin/clang")
+    monkeypatch.setattr(loader.subprocess, "run", _fake_run)
+
+    so = loader._ensure_compiled(tmp_path, ".so", sanitize=False)
+    assert so.read_bytes() == b"fresh-binary"
+    stamp = (tmp_path / "_fastcore.so.stamp").read_text(encoding="utf-8").strip()
+
+    # An rsync -t-style copy: the .c gets an older mtime than the .so but different
+    # content. mtime freshness would keep the stale binary; the fingerprint rebuilds.
+    c_path.write_text("int x = 1;\n", encoding="utf-8")
+    import os as _os
+
+    so_mtime = so.stat().st_mtime_ns
+    _os.utime(c_path, ns=(so_mtime - 1, so_mtime - 1))
+
+    def _fake_run_two(cmd: list[str], **kwargs: object) -> _FakeCompleted:
+        Path(cmd[cmd.index("-o") + 1]).write_bytes(b"rebuilt-binary")
+        return _FakeCompleted()
+
+    monkeypatch.setattr(loader.subprocess, "run", _fake_run_two)
+    so = loader._ensure_compiled(tmp_path, ".so", sanitize=False)
+    assert so.read_bytes() == b"rebuilt-binary"
+    assert (tmp_path / "_fastcore.so.stamp").read_text(encoding="utf-8").strip() != stamp
+
+
 def test_build_sanitized_env_configures_platform_preload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

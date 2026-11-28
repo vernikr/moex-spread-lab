@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import importlib.util
 import math
 import os
 import shutil
 import subprocess
+import sys
 import sysconfig
 import threading
+import warnings
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 _LOCK = threading.Lock()
 _CACHE: dict[bool, Any] = {}
@@ -84,16 +87,51 @@ def _compiler_env() -> dict[str, str]:
     return {key: value for key, value in os.environ.items() if key not in excluded}
 
 
+def _read_stamp(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def _write_stamp(path: Path, value: str) -> None:
+    # Best-effort freshness marker; a failed write only costs one rebuild.
+    with suppress(OSError):
+        path.write_text(value + "\n", encoding="utf-8")
+
+
+def _build_fingerprint(c_bytes: bytes, *, sanitize: bool, cc: str) -> str:
+    digest = hashlib.sha256()
+    digest.update(c_bytes)
+    digest.update(b"\x00")
+    digest.update(b"sanitize" if sanitize else b"release")
+    digest.update(b"\x00")
+    digest.update(sys.version.encode("utf-8"))
+    digest.update(b"\x00")
+    digest.update(cc.encode("utf-8"))
+    return digest.hexdigest()
+
+
+def _drop_stale_binary(so_path: Path, stamp_path: Path) -> None:
+    """A kernel that does not match the source must not be loaded."""
+    so_path.unlink(missing_ok=True)
+    stamp_path.unlink(missing_ok=True)
+
+
 def _ensure_compiled(pkg_dir: Path, ext: str, *, sanitize: bool) -> Path:
     stem = "_fastcore_asan" if sanitize else "_fastcore"
     c_path = pkg_dir / "_fastcore.c"
     so_path = pkg_dir / f"{stem}{ext}"
-    need_build = c_path.is_file() and (
-        not so_path.is_file() or so_path.stat().st_mtime_ns < c_path.stat().st_mtime_ns
-    )
-    if not need_build:
+    stamp_path = so_path.with_name(so_path.name + ".stamp")
+    fail_path = so_path.with_name(so_path.name + ".failed")
+    if not c_path.is_file():
+        return so_path
+    try:
+        c_bytes = c_path.read_bytes()
+    except OSError:
         return so_path
     cc = shutil.which("clang") or (None if sanitize else shutil.which("cc"))
+    cc = cc or ""
     inc = sysconfig.get_path("include")
     if not (cc and inc and Path(inc, "Python.h").is_file()):
         if sanitize:
@@ -101,17 +139,57 @@ def _ensure_compiled(pkg_dir: Path, ext: str, *, sanitize: bool) -> Path:
                 "MOEX_FASTCORE_SANITIZE=1 requires clang and Python development headers"
             )
         return so_path
-    tmp_so = pkg_dir / f"{stem}.tmp.{os.getpid()}{ext}"
-    cmd = _build_compile_command(cc, inc, c_path, tmp_so, sanitize=sanitize)
+    desired = _build_fingerprint(c_bytes, sanitize=sanitize, cc=cc)
+    if so_path.is_file() and _read_stamp(stamp_path) == desired:
+        return so_path
+    if _read_stamp(fail_path) == desired:
+        # Known-bad source for this toolchain: do not rebuild on every worker start.
+        _drop_stale_binary(so_path, stamp_path)
+        return so_path
+    return _build_and_install(
+        _BuildRequest(pkg_dir, c_path, so_path, cc, inc, ext, sanitize, desired, stem)
+    )
+
+
+class _BuildRequest(NamedTuple):
+    pkg_dir: Path
+    c_path: Path
+    so_path: Path
+    cc: str
+    inc: str
+    ext: str
+    sanitize: bool
+    desired: str
+    stem: str
+
+
+def _build_and_install(request: _BuildRequest) -> Path:
+    so_path = request.so_path
+    stamp_path = so_path.with_name(so_path.name + ".stamp")
+    fail_path = so_path.with_name(so_path.name + ".failed")
+    tmp_so = request.pkg_dir / f"{request.stem}.tmp.{os.getpid()}{request.ext}"
+    cmd = _build_compile_command(
+        request.cc, request.inc, request.c_path, tmp_so, sanitize=request.sanitize
+    )
     try:
         res = subprocess.run(cmd, env=_compiler_env(), check=False, capture_output=True, text=True)
         if res.returncode != 0:
-            if sanitize:
+            stderr_tail = (res.stderr or "").strip()[-500:]
+            _drop_stale_binary(so_path, stamp_path)
+            _write_stamp(fail_path, request.desired)
+            if request.sanitize:
                 raise RuntimeError(
-                    f"Sanitized _fastcore build failed ({res.returncode}): {res.stderr.strip()}"
+                    f"Sanitized _fastcore build failed ({res.returncode}): {stderr_tail}"
                 )
+            warnings.warn(
+                f"_fastcore rebuild failed; falling back to pure Python. Compiler stderr: {stderr_tail}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             return so_path
         os.replace(tmp_so, so_path)
+        _write_stamp(stamp_path, request.desired)
+        fail_path.unlink(missing_ok=True)
     finally:
         tmp_so.unlink(missing_ok=True)
         shutil.rmtree(f"{tmp_so}.dSYM", ignore_errors=True)
@@ -158,9 +236,23 @@ def load_fastcore() -> Any:
         # Any failure of the optional C extension falls back to pure Python, and the
         # negative result is cached so a broken build is not retried per call.
         loaded: Any = None
-        with suppress(Exception):
+        try:
             so_path = _ensure_compiled(pkg_dir, ext, sanitize=False)
             loaded = _import_shared_module(so_path) if so_path.is_file() else None
+        except (
+            OSError,
+            RuntimeError,
+            ImportError,
+            ValueError,
+            AttributeError,
+            TypeError,
+            SystemError,
+        ) as exc:
+            warnings.warn(
+                f"_fastcore unavailable ({exc}); falling back to pure Python.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
         _CACHE[False] = loaded
         return _CACHE[False]
 

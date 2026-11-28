@@ -76,7 +76,7 @@ def test_render_code_health_digest_produces_markdown_tables(tmp_path: Path) -> N
 
 @pytest.fixture
 def namespace_root(tmp_path: Path) -> Path:
-    packages = ("core", "data", "accounting", "strategies", "proof", "web")
+    packages = ("core", "data", "accounting", "strategies", "proof", "web", "remote")
     roots = [f"packages/{name}/src/moex_spread_lab/{name}" for name in packages]
     for relative in (*roots, "src/moex_spread_lab"):
         directory = tmp_path / relative
@@ -101,9 +101,13 @@ def test_typecheck_view_unifies_namespace_roots_and_is_reproducible(namespace_ro
         "core",
         "data",
         "proof",
+        "remote",
         "strategies",
         "web",
     }
+    assert (view / "moex_spread_lab/remote").resolve() == (
+        namespace_root / "packages/remote/src/moex_spread_lab/remote"
+    )
     core = view / "moex_spread_lab/core"
     assert core.is_symlink()
     assert core.resolve() == namespace_root / "packages/core/src/moex_spread_lab/core"

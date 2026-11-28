@@ -36,6 +36,7 @@ def build_view(root: Path = ROOT) -> Path:
             "packages/strategies/src/moex_spread_lab",
             "packages/proof/src/moex_spread_lab",
             "packages/web/src/moex_spread_lab",
+            "packages/remote/src/moex_spread_lab",
             "src/moex_spread_lab",
         )
     )

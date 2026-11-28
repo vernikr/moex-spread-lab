@@ -10,6 +10,7 @@ dependencies = [
     "msl-data",
     "msl-strategies",
     "msl-proof",
+    "msl-remote",
     "msl-web",
     "openpyxl>=3.1,<4",
     "optuna>=4.2,<5",
@@ -36,6 +37,7 @@ msl-core = { workspace = true }
 msl-data = { workspace = true }
 msl-strategies = { workspace = true }
 msl-proof = { workspace = true }
+msl-remote = { workspace = true }
 msl-web = { workspace = true }
 
 [tool.setuptools]
@@ -62,6 +64,7 @@ pythonpath = [
     "packages/strategies/src",
     "packages/proof/src",
     "packages/web/src",
+    "packages/remote/src",
     "src",
     ".",
     "packages/data/tests",
@@ -70,11 +73,13 @@ pythonpath = [
     "packages/proof/tests",
     "packages/web/tests",
     "packages/core/tests",
+    "packages/remote/tests",
     "tests",
 ]
 # Test discovery is package-scoped; root tests/ contains shared synthetic fixtures only.
 testpaths = [
     "packages/core/tests",
+    "packages/remote/tests",
     "packages/data/tests",
     "packages/accounting/tests",
     "packages/strategies/tests",
@@ -112,9 +117,11 @@ src = [
     "packages/strategies/src",
     "packages/proof/src",
     "packages/web/src",
+    "packages/remote/src",
     "src",
     "tests",
     "packages/core/tests",
+    "packages/remote/tests",
     "packages/data/tests",
     "packages/accounting/tests",
     "packages/strategies/tests",
@@ -170,6 +177,7 @@ include = [
     "packages/strategies/src",
     "packages/proof/src",
     "packages/web/src",
+    "packages/remote/src",
     "src",
     "scripts",
 ]
@@ -179,6 +187,7 @@ extraPaths = [
     "scripts",
     "scripts/typings",
     "packages/core/tests",
+    "packages/remote/tests",
     "packages/accounting/tests",
     "packages/proof/tests",
     "tests",
@@ -291,7 +300,7 @@ paths = ["scripts/check_health.py"]
 
 [[tool.size-report.columns]]
 label = "remote/__init__.py"
-paths = ["src/moex_spread_lab/remote/__init__.py"]
+paths = ["src/moex_spread_lab/remote/__init__.py", "packages/remote/src/moex_spread_lab/remote/__init__.py"]
 
 [[tool.size-report.columns]]
 label = "sync_api.pyi"
@@ -1315,7 +1324,7 @@ paths = ["docs/research/results/received/R15/source-reports/gs.txt"]
 
 [[tool.size-report.columns]]
 label = "workstation_bench.py"
-paths = ["packages/core/src/moex_spread_lab/core/workstation_bench.py", "src/moex_spread_lab/remote/bench.py"]
+paths = ["packages/core/src/moex_spread_lab/core/workstation_bench.py", "src/moex_spread_lab/remote/bench.py", "packages/remote/src/moex_spread_lab/remote/bench.py"]
 
 [[tool.size-report.columns]]
 label = "R15-neural.md"
@@ -1643,7 +1652,7 @@ paths = ["docs/research/results/received/R06/source-reports/ds.txt"]
 
 [[tool.size-report.columns]]
 label = "test_remote_cli.py"
-paths = ["packages/core/tests/test_remote_cli.py"]
+paths = ["packages/core/tests/test_remote_cli.py", "packages/remote/tests/test_remote_cli.py"]
 
 [[tool.size-report.columns]]
 label = "w1-intake.md"
@@ -2159,7 +2168,7 @@ paths = ["docs/research/results/received/R03/source-reports/ge.txt"]
 
 [[tool.size-report.columns]]
 label = "workstation_remote.py"
-paths = ["packages/core/src/moex_spread_lab/core/workstation_remote.py", "src/moex_spread_lab/remote/workstation.py"]
+paths = ["packages/core/src/moex_spread_lab/core/workstation_remote.py", "src/moex_spread_lab/remote/workstation.py", "packages/remote/src/moex_spread_lab/remote/workstation.py"]
 
 [[tool.size-report.columns]]
 label = "packages/proof/docs/README.md"
@@ -2379,7 +2388,7 @@ paths = ["src/moex_spread_lab.egg-info/top_level.txt"]
 
 [[tool.size-report.columns]]
 label = "test_workstation_bench.py"
-paths = ["packages/core/tests/test_workstation_bench.py"]
+paths = ["packages/core/tests/test_workstation_bench.py", "packages/remote/tests/test_workstation_bench.py"]
 
 [[tool.size-report.columns]]
 label = "dependency_links.txt"
@@ -2623,7 +2632,7 @@ paths = ["tests/test_proof_plateau.py"]
 
 [[tool.size-report.columns]]
 label = "remote_cli.py"
-paths = ["packages/core/src/moex_spread_lab/core/remote_cli.py", "src/moex_spread_lab/remote/cli.py"]
+paths = ["packages/core/src/moex_spread_lab/core/remote_cli.py", "src/moex_spread_lab/remote/cli.py", "packages/remote/src/moex_spread_lab/remote/cli.py"]
 
 [[tool.size-report.columns]]
 label = "cohort_prepare_helpers.py"
@@ -2843,7 +2852,7 @@ paths = ["packages/proof/tests/test_perf_equivalence_stream.py"]
 
 [[tool.size-report.columns]]
 label = "candidate_data.py"
-paths = ["packages/core/src/moex_spread_lab/core/candidate_data.py", "src/moex_spread_lab/remote/candidate_data.py"]
+paths = ["packages/core/src/moex_spread_lab/core/candidate_data.py", "src/moex_spread_lab/remote/candidate_data.py", "packages/remote/src/moex_spread_lab/remote/candidate_data.py"]
 
 [[tool.size-report.columns]]
 label = "screener.py"
@@ -3823,7 +3832,7 @@ paths = ["packages/data/src/moex_spread_lab/data/retention/helpers_p72_packages_
 
 [[tool.size-report.columns]]
 label = "candidate_python.py"
-paths = ["packages/core/src/moex_spread_lab/core/candidate_python.py", "src/moex_spread_lab/remote/candidate_python.py"]
+paths = ["packages/core/src/moex_spread_lab/core/candidate_python.py", "src/moex_spread_lab/remote/candidate_python.py", "packages/remote/src/moex_spread_lab/remote/candidate_python.py"]
 
 [[tool.size-report.columns]]
 label = "test_worker_metrics.py"
@@ -4432,3 +4441,11 @@ paths = ["packages/strategies/tests/conformance_fixtures.py"]
 [[tool.size-report.columns]]
 label = "test_intent_boundaries.py"
 paths = ["packages/strategies/tests/test_intent_boundaries.py"]
+
+[[tool.size-report.columns]]
+label = "packages/remote/pyproject.toml"
+paths = ["packages/remote/pyproject.toml"]
+
+[[tool.size-report.columns]]
+label = "packages/remote/manifest.json"
+paths = ["packages/remote/manifest.json"]

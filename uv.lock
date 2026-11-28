@@ -9,6 +9,7 @@ members = [
     "msl-core",
     "msl-data",
     "msl-proof",
+    "msl-remote",
     "msl-strategies",
     "msl-web",
 ]
@@ -362,6 +363,7 @@ dependencies = [
     { name = "msl-core" },
     { name = "msl-data" },
     { name = "msl-proof" },
+    { name = "msl-remote" },
     { name = "msl-strategies" },
     { name = "msl-web" },
     { name = "openpyxl" },
@@ -394,6 +396,7 @@ requires-dist = [
     { name = "msl-core", editable = "packages/core" },
     { name = "msl-data", editable = "packages/data" },
     { name = "msl-proof", editable = "packages/proof" },
+    { name = "msl-remote", editable = "packages/remote" },
     { name = "msl-strategies", editable = "packages/strategies" },
     { name = "msl-web", editable = "packages/web" },
     { name = "openpyxl", specifier = ">=3.1,<4" },
@@ -478,6 +481,17 @@ requires-dist = [
     { name = "msl-strategies", editable = "packages/strategies" },
     { name = "optuna", specifier = ">=4.2,<5" },
 ]
+
+[[package]]
+name = "msl-remote"
+version = "0.9.0"
+source = { editable = "packages/remote" }
+dependencies = [
+    { name = "msl-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "msl-core", editable = "packages/core" }]
 
 [[package]]
 name = "msl-strategies"

@@ -1,0 +1,23 @@
+{
+  "module_id": "moex-spread-lab.remote",
+  "release": "0.9.0",
+  "contract_version": "msl-remote.v1",
+  "kind": "tooling",
+  "capabilities": ["workstation_bridge", "safe_sync", "isolated_benchmark"],
+  "inputs": ["workstation_checkout", "bridge_request"],
+  "outputs": ["workstation_status", "benchmark_result"],
+  "dependencies": ["moex-spread-lab.core"],
+  "owner": "project-tooling",
+  "resource_profile": {
+    "network": "authenticated_bridge_and_workstation_loopback",
+    "runtime": "explicit_command",
+    "storage": "caller-selected"
+  },
+  "rights_provenance": {
+    "data_rights": "private_research_assumption_A-05",
+    "credentials": "environment_only",
+    "redistribution": "disabled"
+  },
+  "determinism": {"required": false, "randomness": "delegated_to_proof"},
+  "health": {"supported_python": ">=3.12,<3.13", "status": "active"}
+}

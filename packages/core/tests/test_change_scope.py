@@ -14,7 +14,7 @@ from test_architecture_dag import ALLOWED_LAYER_TARGETS
 PACKAGES = change_scope.PACKAGES
 ROOT = Path(__file__).resolve().parents[3]
 
-ALL_SIX = ("core", "data", "accounting", "strategies", "proof", "web")
+ALL_PACKAGES = ("core", "data", "accounting", "strategies", "proof", "web", "remote")
 
 
 def _decide(
@@ -36,7 +36,7 @@ def test_docs_only_profile_states_skipped_legs_in_outputs_and_report() -> None:
 
 
 def test_github_output_writer_and_empty_change_set(tmp_path: Path) -> None:
-    assert (_decide([]).profile, _decide([]).packages) == ("full", ALL_SIX)
+    assert (_decide([]).profile, _decide([]).packages) == ("full", ALL_PACKAGES)
     out = tmp_path / "output.txt"
     change_scope.write_github_output(
         out, _decide(["packages/web/src/moex_spread_lab/web/server.py"])
@@ -50,7 +50,7 @@ def test_github_output_writer_and_empty_change_set(tmp_path: Path) -> None:
 
 
 def test_reverse_dependency_table_matches_architecture_dag() -> None:
-    """The six-entry table must not drift from the architecture gate's layer DAG."""
+    """The package table must not drift from the architecture gate's layer DAG."""
     targets = {layer: ALLOWED_LAYER_TARGETS[layer] for layer in PACKAGES}
 
     def transitive_reach(layer: str) -> set[str]:
@@ -186,30 +186,39 @@ _APW, _DPW = ("accounting", "strategies", "proof", "web"), ("data", "strategies"
 ROUTING_TABLE = [
     (["+docs/development/shadow-test.md"], "docs", (), False),
     (["+docs/guides/shadow.rst", "README.md", "AGENTS.md", "+docs/shadow.md"], "docs", (), False),
+    (["packages/remote/src/moex_spread_lab/remote/cli.py"], "packages", ("remote",), True),
+    (["packages/remote/tests/test_remote_cli.py"], "packages", ("remote",), True),
+    (
+        ["packages/remote/src/moex_spread_lab/remote/bench.py", _DATA],
+        "packages",
+        (*_DPW, "remote"),
+        True,
+    ),
+    (["+packages/remote/pyproject.toml"], "packages", ("remote",), False),
     ([f"{_WEB}/server.py"], "packages", _W, True),
     (["packages/web/tests/test_screener_app.py"], "packages", _W, True),
     ([f"{_PROOF}/cohort_models.py"], "packages", _PW, True),
     ([_STRAT], "packages", _SPW, True),
     ([_ACCT], "packages", _APW, True),
     ([_DATA], "packages", _DPW, True),
-    ([f"{_CORE}/contracts.py"], "packages", ALL_SIX, True),
+    ([f"{_CORE}/contracts.py"], "packages", ALL_PACKAGES, True),
     ([f"{_WEB}/static/js/app.js"], "packages", _W, False),
     ([f"{_WEB}/static/css/layout.css"], "packages", _W, False),
     ([f"{_WEB}/static/index.html"], "packages", _W, False),
     (["packages/proof/manifest.json"], "packages", _PW, False),
     (["+packages/web/README.md"], "packages", _W, False),
     ([f"+{_WEB}/shadow_new.py"], "packages", _W, False),
-    ([f"+{_CORE}/shadow_new.py"], "packages", ALL_SIX, False),
+    ([f"+{_CORE}/shadow_new.py"], "packages", ALL_PACKAGES, False),
     ([f"{_WEB}/server.py", _ACCT], "packages", _APW, True),
     ([f"{_PROOF}/cohort_models.py", f"{_WEB}/server.py"], "packages", _PW, True),
-    ([f"{_CORE}/contracts.py", _DATA], "packages", ALL_SIX, True),
+    ([f"{_CORE}/contracts.py", _DATA], "packages", ALL_PACKAGES, True),
     ([_STRAT, _DATA], "packages", _DPW, True),
     (["+docs/shadow.md", f"{_WEB}/server.py"], "packages", _W, True),
     (["packages/proof/tests/golden_output.json"], "packages", _PW, False),
     ([f"+{_WEB}/gone.py"], "packages", _W, False),
     (["packages/data/src/moex_spread_lab/data/lake.py"], "packages", _DPW, True),
     *(
-        ([path], "full", ALL_SIX, False)
+        ([path], "full", ALL_PACKAGES, False)
         for path in (
             "pyproject.toml",
             ".github/workflows/ci.yml",
@@ -228,8 +237,8 @@ ROUTING_TABLE = [
             f"{_CORE}/_fastcore.c",
         )
     ),
-    (["+docs/shadow.md", "pyproject.toml"], "full", ALL_SIX, False),
-    (["docs/development/ci.md", "scripts/verify.py"], "full", ALL_SIX, False),
+    (["+docs/shadow.md", "pyproject.toml"], "full", ALL_PACKAGES, False),
+    (["docs/development/ci.md", "scripts/verify.py"], "full", ALL_PACKAGES, False),
 ]
 _TIER2 = (".clang-tidy", "_fastcore.c", "test_fastcore_parity.py", "workflows/ci.yml")
 

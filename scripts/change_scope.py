@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGES = ("core", "data", "accounting", "strategies", "proof", "web")
+PACKAGES = ("core", "data", "accounting", "strategies", "proof", "web", "remote")
 # Which legs run when a package changes; pinned to test_change_scope.py.
 REVERSE_DEPENDENTS: dict[str, tuple[str, ...]] = {
     "core": PACKAGES,
@@ -27,6 +27,7 @@ REVERSE_DEPENDENTS: dict[str, tuple[str, ...]] = {
     "strategies": ("strategies", "proof", "web"),
     "proof": ("proof", "web"),
     "web": ("web",),
+    "remote": ("remote",),
 }
 TIER2_PATTERNS = (
     ".clang-tidy",

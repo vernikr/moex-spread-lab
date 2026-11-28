@@ -29,6 +29,8 @@ The proof workbench supersedes the S2 pair table at `/`: library-based auto-tuni
 
 ## Implementation decisions (2026-11-26 – 2026-11-28)
 
+- **Remote workspace ownership (#362).** Workstation bridge and isolated benchmark tooling live in `packages/remote`, depend on `core`, and retain the `moex_spread_lab.remote` import path. The root application retains the CLI composition and namespace initializer.
+
 - **Completed ISS history has no age-based expiry (#332).** The user replaced #284's conservative 24-hour limit: a closed range captured after its Moscow end date is reusable without a time limit, subject to page and pagination validation. Open ranges, unknown or future capture times remain ineligible. Historical corrections are possible, so reconciliation is explicit, not automatic; raw-body retention is unchanged.
 
 - **Retired W1–W7 research pipeline and sealed W7 validation (#190).** Stage-9 accounting is costs, VTB account risk, causal sizing and the portfolio overlay; `import moex_spread_lab.accounting` no longer loads research/validation/replay/ledger/Parquet code. No change to proof/screener validation shares, costs, capital controls or trading authority.

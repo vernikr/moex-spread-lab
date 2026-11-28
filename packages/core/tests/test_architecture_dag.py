@@ -10,11 +10,11 @@ from collections.abc import Callable, Iterator
 from functools import lru_cache
 from pathlib import Path
 
-DOMAIN_LAYERS = frozenset({"core", "data", "accounting", "strategies", "proof", "web"})
+DOMAIN_LAYERS = frozenset({"core", "data", "accounting", "strategies", "proof", "web", "remote"})
 
 
 def derive_layer(key: str, *, repo_root: Path | None = None) -> str | None:
-    if key in {"cli", "core.cli", "data.cli", "accounting.cli"} or key.split(".", 1)[0] == "remote":
+    if key in {"cli", "core.cli", "data.cli", "accounting.cli"}:
         return "cli"
     head = key.split(".", 1)[0]
     return head if head in DOMAIN_LAYERS else None
@@ -96,13 +96,14 @@ UMBRELLA_DIR = REPO_ROOT / "src" / "moex_spread_lab"
 PACKAGES_DIR = REPO_ROOT / "packages"
 
 
-_LAYERS_ORDER = ("core", "data", "accounting", "strategies", "proof", "web", "cli")
-# Each layer may import itself and all lower layers, except accounting, which
-# may not import its data sibling (sibling isolation is checked separately).
+_LAYERS_ORDER = ("core", "data", "accounting", "strategies", "proof", "web", "remote", "cli")
+# Domain layers import lower layers; accounting excludes its data sibling.
+# Workstation tooling depends on core only; CLI composes all providers.
 ALLOWED_LAYER_TARGETS: dict[str, frozenset[str]] = {
     layer: frozenset(_LAYERS_ORDER[: i + 1]) for i, layer in enumerate(_LAYERS_ORDER)
 }
 ALLOWED_LAYER_TARGETS["accounting"] = frozenset({"core", "accounting"})
+ALLOWED_LAYER_TARGETS["remote"] = frozenset({"core", "remote"})
 
 # Single-pass parse cache: each workspace file is parsed once, then reused.
 _PARSE_CACHE: dict[Path, tuple[str, ast.Module]] = {}
@@ -380,7 +381,7 @@ class ArchitectureDagTests(unittest.TestCase):
         cycles = _find_cycles(_adjacency(edges))
         self.assertEqual(cycles, [], f"Internal import cycles detected: {cycles}")
 
-    def test_strict_six_layer_dependency_dag(self) -> None:
+    def test_strict_layer_dependency_dag(self) -> None:
         _, edges = _workspace_analysis()
         self._assert_clean(_layer_violations(edges, LAYER_ASSIGNMENTS), "Cross-layer DAG")
 

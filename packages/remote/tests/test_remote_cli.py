@@ -6,12 +6,15 @@ import argparse
 import base64
 import json
 import platform
+import re
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from moex_spread_lab import cli as application_cli
 from moex_spread_lab.remote import cli as remote_cli
 from moex_spread_lab.remote import workstation as workstation_remote
 
@@ -69,6 +72,44 @@ def test_status_failure_and_env_validation_keep_the_token_out_of_output(monkeypa
     monkeypatch.setenv("ARENA_BRIDGE_URL", "http://example.test")  # plain HTTP is refused
     assert remote_cli.run(argparse.Namespace(remote_command="sync")) == 2
     assert "token-xyz" not in capsys.readouterr().err
+
+
+def test_root_cli_registers_remote_once_and_fast_path_skips_plugin_discovery(monkeypatch, capsys):
+    monkeypatch.setattr(application_cli, "entry_points", lambda **kwargs: [])
+    assert (
+        application_cli.build_parser().parse_args(["remote", "status"]).remote_command == "status"
+    )
+    monkeypatch.setattr(
+        application_cli, "entry_points", lambda **kwargs: pytest.fail("unexpected plugin discovery")
+    )
+    monkeypatch.setattr("sys.argv", ["moex-spread-lab", "remote", "--help"])
+    with pytest.raises(SystemExit) as exc:
+        application_cli.main()
+    assert exc.value.code == 0
+    assert "status" in capsys.readouterr().out
+
+
+def test_bridge_transports_packaged_workstation_source(monkeypatch, capsys):
+    monkeypatch.setenv("ARENA_BRIDGE_URL", "https://example.test")
+    monkeypatch.setenv("ARENA_BRIDGE_TOKEN", "token-xyz")
+    calls = []
+
+    def request(url, _token, *, body=None):
+        calls.append((url, body))
+        if url.endswith("/health"):
+            return {"ok": True}
+        return {"ok": True, "exit_code": 0, "stdout": '{"head":"abc"}'}
+
+    monkeypatch.setattr(remote_cli, "request", request)
+    assert remote_cli.run(argparse.Namespace(remote_command="status")) == 0
+    body = calls[1][1]
+    assert body is not None
+    command = body["command"]
+    match = re.search(r"b64decode\('([^']+)'\)", shlex.split(command)[2])
+    assert match is not None
+    assert base64.b64decode(match.group(1)) == Path(workstation_remote.__file__).read_bytes()
+    assert "token-xyz" not in command
+    assert json.loads(capsys.readouterr().out) == {"head": "abc"}
 
 
 def test_dirty_checkout_and_wrong_branch_refused(monkeypatch, tmp_path):

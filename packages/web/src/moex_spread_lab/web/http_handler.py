@@ -149,7 +149,10 @@ class LoopbackHandler(BaseHTTPRequestHandler):
         if "*" in extra:
             return True
         allowed = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
-        allowed |= {f"https://{host}" for host in extra}
+        # A preview host may be reached over plain http (local debug proxy, tunnel without TLS),
+        # and `local_request` accepts its `Host` regardless of scheme, so the scheme must not be
+        # the thing that turns every POST into a 403.
+        allowed |= {f"http://{host}" for host in extra} | {f"https://{host}" for host in extra}
         return _header_token(origin) in allowed
 
     def local_dev_request(self) -> bool:

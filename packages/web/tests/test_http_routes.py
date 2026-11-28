@@ -382,6 +382,34 @@ class WebHttpRoutesTests(unittest.TestCase):
         for ok_path in ("/api/timeframes", "/api/settings"):
             self.assertEqual(self._request("GET", ok_path)[0], 200, ok_path)
 
+    def test_allowed_preview_host_posts_over_plain_http(self) -> None:
+        """#351: `MSL_ALLOWED_HOSTS` hosts must not be restricted to https by `local_origin`."""
+        with mock.patch.dict("os.environ", {"MSL_ALLOWED_HOSTS": PREVIEW}):
+            for status in (
+                self._request(
+                    "POST",
+                    "/api/settings",
+                    body={},
+                    headers={"Host": PREVIEW, "Origin": f"http://{PREVIEW}"},
+                )[0],
+                self._request(
+                    "POST",
+                    "/api/settings",
+                    body={},
+                    headers={"Host": PREVIEW, "Origin": f"https://{PREVIEW}"},
+                )[0],
+            ):
+                self.assertNotEqual(status, 403)
+            self.assertEqual(
+                self._request(
+                    "POST",
+                    "/api/settings",
+                    body={},
+                    headers={"Host": PREVIEW, "Origin": "http://evil.example"},
+                )[0],
+                403,
+            )
+
     def test_loopback_host_origin_and_preview_allowlist_guards(self) -> None:
         for path in (
             "/",

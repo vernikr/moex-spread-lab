@@ -354,6 +354,16 @@ def _require_executable_exits(proof: dict[str, Any]) -> None:
             )
 
 
+def _require_lqdt_marks(proof: dict[str, Any], marks: dict[str, float]) -> None:
+    """Every dated side needs a mark, otherwise the carry overlay cannot be priced."""
+    trades = cast(list[dict[str, Any]], proof.get("trades") or [])
+    for trade in trades:
+        for side in ("entry", "exit"):
+            date = trade[side]["date"]
+            if date not in marks:
+                raise W0Error(f"Нет отметки ЛКДТ на дату {date} для расчёта надбавки на ГО.")
+
+
 def size_proof(
     unit: dict[str, Any],
     marks: dict[str, float],
@@ -370,6 +380,7 @@ def size_proof(
     initial = positive(settings.initial_capital_rub, "начальный капитал")
     proof = _working_copy(unit, metrics_only=metrics_only, copy_unit=copy_unit)
     _require_executable_exits(proof)
+    _require_lqdt_marks(proof, marks)
     terms = Terms(proof, contracts, settings)
     state = None
     fc = load_fastcore() if metrics_only else None

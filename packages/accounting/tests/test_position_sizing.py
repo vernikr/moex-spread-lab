@@ -189,6 +189,26 @@ class FundedSizingTests(unittest.TestCase):
         self.assertEqual(list(second[2]), [0.0, 10.0])
         self.assertIs(_get_or_build_scan_columns(rows_b, terms, marks, cache, "cut"), second)
 
+    def test_a_missing_exit_mark_fails_closed(self):
+        for metrics_only in (False, True):
+            with self.subTest(metrics_only=metrics_only):
+                proof, marks, contracts = unit_proof()
+                del marks[proof["trades"][0]["exit"]["date"]]
+                with self.assertRaises(W0Error):
+                    size_proof(
+                        proof,
+                        marks,
+                        ResearchSettings(),
+                        contracts,
+                        metrics_only=metrics_only,
+                    )
+
+    def test_a_missing_entry_mark_fails_closed(self):
+        proof, marks, contracts = unit_proof()
+        del marks[proof["trades"][0]["entry"]["date"]]
+        with self.assertRaises(W0Error):
+            size_proof(proof, marks, ResearchSettings(), contracts)
+
     def test_metrics_only_leaves_the_caller_unit_untouched(self):
         unit, marks, contracts = unit_proof()
         before = deepcopy(unit)

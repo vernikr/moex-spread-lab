@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import io
 import itertools
 import json
@@ -154,7 +155,7 @@ def _fetch(url: str, accept: str) -> tuple[bytes, str, str]:
         with urllib.request.urlopen(request, timeout=30.0, context=TLS_CONTEXT) as response:
             raw: bytes = response.read()
             content_type = str(response.headers.get("Content-Type", ""))
-    except OSError as exc:
+    except (OSError, http.client.HTTPException) as exc:
         raise BenchmarkError(f"benchmark request failed: {exc}") from exc
     return raw, hashlib.sha256(raw).hexdigest(), content_type
 

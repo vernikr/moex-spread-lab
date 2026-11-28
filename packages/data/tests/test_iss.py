@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import importlib
 import json
 import tempfile
@@ -22,8 +23,10 @@ from moex_spread_lab.data.iss.catalog import (
 )
 from moex_spread_lab.data.iss.iss_http import (
     CANDLE_INTERVAL_LABELS,
+    IssHistoryError,
     IssIntakeError,
     candles_url,
+    fetch_history_json,
     fetch_json_with_raw,
     rows,
 )
@@ -123,6 +126,75 @@ def test_candle_pages_must_advance_past_previous_page(next_page):
         with pytest.raises(IssIntakeError, match="candle pagination did not advance"):
             fetch()
     assert calls == [0, 500]
+
+
+def test_candle_incomplete_read_is_retried(monkeypatch):
+    monkeypatch.setattr("moex_spread_lab.data.iss.iss_candles.time.sleep", lambda _: None)
+    calls = []
+
+    class Truncated(_Response):
+        def read(self):
+            raise http.client.IncompleteRead(b"{", 100)
+
+    def opener(request, timeout):
+        calls.append(1)
+        return Truncated(b"") if len(calls) == 1 else _Response(json.dumps(candles([])).encode())
+
+    result = fetch_candle_series(
+        secid="TEST",
+        interval=60,
+        from_date="2026-01-01",
+        till_date="2026-01-02",
+        opener=opener,
+        delay_seconds=0,
+        retries=3,
+    )
+    assert len(calls) == 2
+    assert result["row_count"] == 0
+    calls.clear()
+
+    def always_truncated(request, timeout):
+        calls.append(1)
+        return Truncated(b"")
+
+    with pytest.raises(IssIntakeError, match="ISS request failed") as exc:
+        fetch_candle_series(
+            secid="TEST",
+            interval=60,
+            from_date="2026-01-01",
+            till_date="2026-01-02",
+            opener=always_truncated,
+            delay_seconds=0,
+            retries=3,
+        )
+    assert isinstance(exc.value.__cause__, http.client.IncompleteRead)
+    assert len(calls) == 4
+
+
+def test_history_incomplete_read_retries_and_exhaustion(monkeypatch):
+    monkeypatch.setattr("moex_spread_lab.data.iss.iss_http.time.sleep", lambda _: None)
+    calls = []
+
+    class Truncated(_Response):
+        def read(self):
+            raise http.client.IncompleteRead(b"{", 100)
+
+    def opener(request, timeout):
+        calls.append(1)
+        return Truncated(b"") if len(calls) == 1 else _Response(b"{}")
+
+    assert fetch_history_json("https://example.test", opener=opener)[0] == {}
+    assert len(calls) == 2
+    calls.clear()
+
+    def always_truncated(request, timeout):
+        calls.append(1)
+        return Truncated(b"")
+
+    with pytest.raises(IssHistoryError, match="history request failed") as exc:
+        fetch_history_json("https://example.test", opener=always_truncated)
+    assert isinstance(exc.value.__cause__, http.client.IncompleteRead)
+    assert len(calls) == 4
 
 
 def block(columns, data):

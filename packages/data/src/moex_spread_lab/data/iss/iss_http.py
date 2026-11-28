@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import time
 import urllib.request
@@ -183,7 +184,7 @@ def fetch_json_with_raw(
     received_at = datetime.now(UTC).isoformat(timespec="seconds")
     try:
         raw, status, content_type = read_response(request, timeout=timeout, opener=opener)
-    except OSError as exc:
+    except (OSError, http.client.HTTPException) as exc:
         raise IssIntakeError(f"ISS request failed: {exc}") from exc
     if status != 200:
         raise IssIntakeError(f"ISS request returned HTTP {status}")
@@ -261,10 +262,16 @@ def fetch_history_json(
     opener: Callable[..., Any] = urllib.request.urlopen,
     error: type[W0Error] = IssHistoryError,
 ) -> tuple[dict[str, Any], str]:
-    try:
-        raw, _, _ = read_response(url, timeout=timeout, opener=opener)
-    except OSError as exc:
-        raise error(f"history request failed: {url}: {exc}") from exc
+    attempt = 0
+    while True:
+        try:
+            raw, _, _ = read_response(url, timeout=timeout, opener=opener)
+            break
+        except (OSError, http.client.HTTPException) as exc:
+            if attempt == 3:
+                raise error(f"history request failed: {url}: {exc}") from exc
+            attempt += 1
+            time.sleep(min(2.0, 0.25 * attempt))
     value = decode_json(
         raw,
         error=error,

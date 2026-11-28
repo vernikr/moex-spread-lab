@@ -1,3 +1,4 @@
+import http.client
 import json
 import sys
 from datetime import datetime
@@ -20,6 +21,23 @@ from moex_spread_lab.data.benchmark.lineage import (
 
 XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 RATES = [{"date": "2020-01-01", "rate": 10}, {"date": "2020-01-02", "rate": 10}]
+
+
+def test_benchmark_fetch_wraps_incomplete_read(monkeypatch):
+    class Truncated:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            raise http.client.IncompleteRead(b"{", 100)
+
+    monkeypatch.setattr(lineage.urllib.request, "urlopen", lambda *args, **kwargs: Truncated())
+    with pytest.raises(BenchmarkError, match="benchmark request failed") as exc:
+        lineage._fetch("https://example.test", "application/json")
+    assert isinstance(exc.value.__cause__, http.client.IncompleteRead)
 
 
 def observed(ticker, day, price):

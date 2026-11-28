@@ -205,15 +205,14 @@ def _append_priced_trade(
     if breakdown is not None:
         for component, value in (exit_bd or breakdown).items():
             state.cost_totals[component] += value
-    tick_size = float(ctx.near_contract["tick_size"])
     state.trades.append(
         {
             "entry_date": state.entry_date,
             "exit_date": date_key,
             "direction": direction,
             "quantity": ctx.params.quantity,
-            "entry_spread_ticks": _round((state.entry_near - state.entry_far) / tick_size),
-            "exit_spread_ticks": _round((cur_near - cur_far) / tick_size),
+            "entry_spread_ticks": _round(entry_sp / ctx.spread_tick_value_rub),
+            "exit_spread_ticks": _round(exit_sp / ctx.spread_tick_value_rub),
             "entry_near_fill": state.entry_near,
             "entry_far_fill": state.entry_far,
             "exit_near_fill": cur_near,

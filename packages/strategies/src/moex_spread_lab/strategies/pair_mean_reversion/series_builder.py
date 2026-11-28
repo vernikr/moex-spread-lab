@@ -135,6 +135,7 @@ class SimContext:
     far_contract: dict[str, Any]
     near_multiplier: float
     far_multiplier: float
+    spread_tick_value_rub: float
     margin_per_pair: float
     normalized_cost: dict[str, Any] | None
     tariff_costs: bool
@@ -177,6 +178,9 @@ def build_sim_context(series: dict[str, Any], params: Any) -> SimContext:
         far_contract=far_contract,
         near_multiplier=float(near_contract["tick_value"]) / float(near_contract["tick_size"]),
         far_multiplier=float(far_contract["tick_value"]) / float(far_contract["tick_size"]),
+        spread_tick_value_rub=float(
+            series.get("spread_tick_value_rub", near_contract["tick_value"])
+        ),
         margin_per_pair=margin_per_pair,
         normalized_cost=norm_cost,
         tariff_costs=tariff_costs,
@@ -291,8 +295,11 @@ def build_series(
         raise AnalyticsError("fewer than two common pair timestamps")
     last_ts_by_date = {near_rows[ts]["date"]: ts for ts in common_ts}
     b_dates = sorted(benchmark)
-    if contracts[near]["tick_size"] != contracts[far]["tick_size"]:
-        raise AnalyticsError("baseline requires equal tick sizes")
+    if (
+        contracts[near]["tick_size"] != contracts[far]["tick_size"]
+        or contracts[near]["tick_value"] != contracts[far]["tick_value"]
+    ):
+        raise AnalyticsError("baseline requires equal tick sizes and tick values")
     tick_size = float(contracts[near]["tick_size"])
     rows: list[dict[str, Any]] = []
     for ts in common_ts:

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
 from moex_spread_lab.strategies.pair_mean_reversion.engine import (
+    AnalyticsError,
     build_daily_series,
     build_series,
     get_cost_scenario,
@@ -223,6 +224,81 @@ class AnalyticsTests(unittest.TestCase):
         self.assertGreater(report["summary"]["trade_count"], 0)
         self.assertIn("final_X", report["summary"])
         self.assertTrue(report["trades"])
+
+    def test_cross_scale_normalized_pair_reports_rub_spread_ticks_and_build_series_checks_tick_value(
+        self,
+    ):
+        contracts = {
+            "USDRUBF": {
+                "lot_size": 1000,
+                "tick_size": 0.01,
+                "tick_value": 10.0,
+                "initial_margin": 5000.0,
+            },
+            "SiZ6": {
+                "lot_size": 1,
+                "tick_size": 1.0,
+                "tick_value": 1.0,
+                "initial_margin": 5000.0,
+            },
+        }
+        near_px = [90.00, 90.01, 89.99, 90.00, 90.00, 89.91, 89.91, 90.00]
+        far_px = [90000.0] * 8
+        rows = [
+            {
+                "date": f"2026-02-0{i + 1}",
+                "near_open": n,
+                "near_close": n,
+                "far_open": f,
+                "far_close": f,
+                "spread_ticks": round((n * 1000.0 - f * 1.0) / 10.0, 8),
+                "benchmark_price": 1.0,
+                "benchmark_source_kind": "observed",
+            }
+            for i, (n, f) in enumerate(zip(near_px, far_px, strict=True))
+        ]
+        rep = run_mean_reversion_baseline(
+            {
+                "near": "USDRUBF",
+                "far": "SiZ6",
+                "spread_tick_value_rub": 10.0,
+                "contracts": contracts,
+                "rows": rows,
+                "provenance": {},
+            },
+            lookback=5,
+            entry_z=1.5,
+            exit_z=0.5,
+            fill="open",
+            analysis_role="diagnostic_only",
+        )
+        self.assertEqual(rep["trades"][0]["entry_spread_fill"], -90.0)
+        self.assertEqual(rep["trades"][0]["entry_spread_ticks"], -9.0)
+        self.assertEqual(rep["trades"][0]["exit_spread_ticks"], 0.0)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "near.json").write_text(
+                json.dumps(candle_payload("NEAR", [10.0, 10.1])), encoding="utf-8"
+            )
+            (root / "far.json").write_text(
+                json.dumps(candle_payload("FAR", [9.9, 9.95])), encoding="utf-8"
+            )
+            write_lqdt_lineage(root / "benchmark.json", {"2026-01-01": 1.0, "2026-01-02": 1.01})
+            write_near_far_contracts(
+                root / "contracts.json",
+                near={"tick_size": 0.01, "tick_value": 10.0},
+                far={"tick_size": 0.01, "tick_value": 1.0},
+            )
+            with self.assertRaises(AnalyticsError):
+                build_daily_series(
+                    root / "near.json",
+                    root / "far.json",
+                    root / "benchmark.json",
+                    root / "contracts.json",
+                    near="NEAR",
+                    far="FAR",
+                )
 
 
 if __name__ == "__main__":

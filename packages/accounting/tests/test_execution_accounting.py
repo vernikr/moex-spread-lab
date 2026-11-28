@@ -165,6 +165,23 @@ def test_lqdt_overlay_does_not_finance_a_deficit_at_the_benchmark_rate() -> None
     assert recovered.max_deficit == pytest.approx(90.0)
 
 
+def test_cost_totals_keeps_every_component_or_fails_closed() -> None:
+    trade = {
+        "entry": {"costs": {"exchange_clearing": 1.0, "broker": 0.5, "slippage": 2.0}},
+        "exit": {"costs": {"exchange_clearing": 3.0, "broker": 0.5, "slippage": 4.0}},
+    }
+    totals = cost_totals([trade, {"entry": {}, "exit": {}}])
+    assert totals == {"exchange_clearing": 4.0, "broker": 1.0, "slippage": 6.0}
+    assert sum(totals.values()) == pytest.approx(11.0)
+    with pytest.raises(W0Error, match="unknown cost component clearing_fee"):
+        cost_totals([{"entry": {"costs": {"clearing_fee": 7.0}}, "exit": {}}])
+    for bad in (None, float("nan"), float("inf"), True, "1"):
+        with pytest.raises(W0Error, match="must be a finite RUB amount"):
+            cost_totals([{"entry": {"costs": {"slippage": bad}}, "exit": {}}])
+    with pytest.raises(W0Error, match="must be a cost block"):
+        cost_totals([{"entry": {"costs": {}}, "exit": []}])
+
+
 @pytest.mark.parametrize(
     ("capital", "pnl", "margins", "prices", "message"),
     [

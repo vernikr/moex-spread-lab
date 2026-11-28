@@ -139,14 +139,33 @@ def side_cost(
     }
 
 
+def _cost_value(component: str, value: object) -> float:
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
+        raise W0Error(f"cost component {component} must be a finite RUB amount")
+    return float(value)
+
+
+def _add_side_costs(totals: dict[str, float], leg: object) -> None:
+    if leg is None:
+        return
+    if not isinstance(leg, dict):
+        raise W0Error("trade side must be a cost block")
+    raw: object = cast(dict[str, Any], leg).get("costs") or {}
+    if not isinstance(raw, dict):
+        raise W0Error("trade side must be a cost block")
+    costs = cast(dict[str, Any], raw)
+    for key, value in costs.items():
+        if key not in totals:
+            raise W0Error(f"unknown cost component {key}")
+        totals[key] += _cost_value(key, value)
+
+
 def cost_totals(trades: list[dict[str, Any]]) -> dict[str, float]:
-    totals = {"exchange_clearing": 0.0, "broker": 0.0, "slippage": 0.0}
+    """Published breakdown; it must add up to the per-trade `costs_rub` the ledger uses."""
+    totals: dict[str, float] = dict.fromkeys(COST_COMPONENTS, 0.0)
     for trade in trades:
         for side in ("entry", "exit"):
-            costs: dict[str, Any] = trade[side].get("costs") or {}
-            for key, value in costs.items():
-                if key in totals:
-                    totals[key] += float(value)
+            _add_side_costs(totals, trade.get(side))
     return {key: round(value, 2) for key, value in totals.items()}
 
 

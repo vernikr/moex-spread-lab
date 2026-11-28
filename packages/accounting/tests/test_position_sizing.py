@@ -160,6 +160,12 @@ class FundedSizingTests(unittest.TestCase):
             places=6,
         )
         self.assertEqual(proof["summary"]["net_rub"], proof["ledger"][-1]["cumulative_net_rub"])
+        # The published component breakdown must account for every charged rouble.
+        self.assertAlmostEqual(
+            sum(proof["summary"]["cost_totals"].values()),
+            sum(t["costs_rub"] for t in proof["trades"]),
+            places=2,
+        )
 
     def test_losses_resize_the_next_entry_but_never_an_open_position(self):
         unit, marks, contracts = unit_proof()

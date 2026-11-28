@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from moex_spread_lab.core._fastcore_loader import clean_obj
 from moex_spread_lab.proof.proof_pool import get_worker_pool
 from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies import pair_screener as _pair_screener
@@ -55,31 +56,41 @@ class ScreenerStore:
             proof.close()
 
     @staticmethod
-    def _recent(path: Path) -> list[dict[str, Any]]:
+    def _run_ids(path: Path) -> set[str]:
+        """Every recorded ``run_id``; a torn tail must not hide an earlier duplicate.
+
+        Read in binary and decode per line with ``errors="replace"``: an interrupted write can
+        leave a half-written UTF-8 sequence, and one such byte must not fail every later save.
+        """
         try:
-            lines = path.read_text(encoding="utf-8").splitlines()
+            raw = path.read_bytes()
         except FileNotFoundError:
-            return []
-        rows: list[dict[str, Any]] = []
-        for line in lines[-20:]:
-            if not line:
-                continue
+            return set()
+        ids: set[str] = set()
+        for line in raw.splitlines():
             try:
-                record = json.loads(line)
+                record = json.loads(line.decode("utf-8", errors="replace"))
             except ValueError:
                 continue
             if isinstance(record, dict) and isinstance(record.get("run_id"), str):
-                rows.append(record)
-        return rows
+                ids.add(record["run_id"])
+        return ids
 
     def _save(self, path: Path, result: dict[str, Any]) -> None:
         with self.lock:
             path.parent.mkdir(parents=True, exist_ok=True)
-            if any(run["run_id"] == result["run_id"] for run in self._recent(path)):
+            if result["run_id"] in self._run_ids(path):
                 return
-            record = {**result, "recorded_at": datetime.now(UTC).isoformat()}
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+            record = clean_obj({**result, "recorded_at": datetime.now(UTC).isoformat()})
+            line = json.dumps(record, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+            prefix = b""
+            if path.exists() and path.stat().st_size:
+                with path.open("rb") as handle:
+                    handle.seek(-1, 2)
+                    if handle.read(1) != b"\n":
+                        prefix = b"\n"
+            with path.open("ab") as handle:
+                handle.write(prefix + line.encode("utf-8") + b"\n")
 
     def save_proof_search(self, result: dict[str, Any]) -> None:
         self._save(self.inputs.history.parent / "proof-searches.jsonl", result)

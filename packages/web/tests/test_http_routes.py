@@ -116,6 +116,59 @@ class WebPackageArchitectureTests(unittest.TestCase):
             ]
             self.assertEqual([record["run_id"] for record in records], ["old", "new"])
 
+    def test_torn_proof_search_history_stays_writable(self) -> None:
+        """#339: a half-written UTF-8 byte must not fail the save, and a torn line must not merge."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            history = root / "data/analytics/proof-searches.jsonl"
+            history.parent.mkdir(parents=True)
+            history.write_bytes(b'{"run_id":"old"}\n\xd0')
+            store = web_server.ScreenerStore(ScreenerInputs(root))
+            try:
+                store.save_proof_search({"run_id": "new"})
+            finally:
+                store.close()
+            self.assertIn(b'{"run_id":"new"', history.read_bytes())
+
+            history.write_text('{"run_id":"torn"', encoding="utf-8")
+            store = web_server.ScreenerStore(ScreenerInputs(root))
+            try:
+                store.save_proof_search({"run_id": "fresh"})
+            finally:
+                store.close()
+            lines = history.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(json.loads(lines[-1])["run_id"], "fresh")
+
+    def test_proof_search_history_rejects_non_finite_numbers(self) -> None:
+        """#339: history JSONL must stay strict JSON (no `NaN`/`Infinity` tokens)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            history = root / "data/analytics/proof-searches.jsonl"
+            store = web_server.ScreenerStore(ScreenerInputs(root))
+            try:
+                store.save_proof_search({"run_id": "nan", "value": math.nan, "nested": [math.inf]})
+            finally:
+                store.close()
+            record = json.loads(history.read_text(encoding="utf-8"))
+            self.assertIsNone(record["value"])
+            self.assertEqual(record["nested"], [None])
+
+    def test_proof_search_history_deduplicates_beyond_the_last_twenty_rows(self) -> None:
+        """#361: `run_id` uniqueness is checked against the whole file, not a 20-row window."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            history = root / "data/analytics/proof-searches.jsonl"
+            store = web_server.ScreenerStore(ScreenerInputs(root))
+            try:
+                for i in range(25):
+                    store.save_proof_search({"run_id": f"r{i}"})
+                store.save_proof_search({"run_id": "r0"})
+            finally:
+                store.close()
+            run_ids = [json.loads(line)["run_id"] for line in history.read_text().splitlines()]
+            self.assertEqual(len(run_ids), 25)
+            self.assertEqual(run_ids.count("r0"), 1)
+
     def test_json_transport_replaces_non_finite_numbers_with_null(self) -> None:
         assets: list[tuple[int, bytes, str]] = []
         handler = SimpleNamespace(

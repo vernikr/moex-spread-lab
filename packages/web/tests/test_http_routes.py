@@ -87,6 +87,15 @@ class WebPackageArchitectureTests(unittest.TestCase):
         self.assertIn("--port", proc.stdout)
         self.assertIn("--root", proc.stdout)
 
+    def test_unused_store_close_does_not_initialize_proof_service(self) -> None:
+        store = web_server.ScreenerStore(ScreenerInputs(Path.cwd()))
+        with mock.patch.object(
+            web_server,
+            "ProofService",
+            side_effect=AssertionError("ProofService initialized during close"),
+        ):
+            store.close()
+
 
 class WebHttpRoutesTests(unittest.TestCase):
     _tmp: ClassVar[tempfile.TemporaryDirectory[str]]

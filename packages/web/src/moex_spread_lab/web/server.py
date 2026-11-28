@@ -49,7 +49,10 @@ class ScreenerStore:
         return self._calendar
 
     def close(self) -> None:
-        self.proof.close()
+        proof = self._proof
+        self._proof = None
+        if proof is not None:
+            proof.close()
 
     @staticmethod
     def _recent(path: Path) -> list[dict[str, Any]]:

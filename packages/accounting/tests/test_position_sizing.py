@@ -167,6 +167,28 @@ class FundedSizingTests(unittest.TestCase):
             places=2,
         )
 
+    def test_scan_column_cache_is_not_reused_for_a_different_series(self):
+        from types import SimpleNamespace
+
+        from moex_spread_lab.accounting.sizing_fast import _get_or_build_scan_columns
+
+        dates = ["2026-01-01", "2026-01-02"]
+        rows_a = [
+            {"date": d, "spread": float(i), "volume_eligible": True} for i, d in enumerate(dates)
+        ]
+        rows_b = [
+            {"date": d, "spread": float(i) * 10.0, "volume_eligible": True}
+            for i, d in enumerate(dates)
+        ]
+        terms = SimpleNamespace(native=False, margin=100.0)
+        marks = dict.fromkeys(dates, 1.0)
+        cache: dict = {}
+        first = _get_or_build_scan_columns(rows_a, terms, marks, cache, "cut")
+        self.assertEqual(list(first[2]), [0.0, 1.0])
+        second = _get_or_build_scan_columns(rows_b, terms, marks, cache, "cut")
+        self.assertEqual(list(second[2]), [0.0, 10.0])
+        self.assertIs(_get_or_build_scan_columns(rows_b, terms, marks, cache, "cut"), second)
+
     def test_metrics_only_leaves_the_caller_unit_untouched(self):
         unit, marks, contracts = unit_proof()
         before = deepcopy(unit)

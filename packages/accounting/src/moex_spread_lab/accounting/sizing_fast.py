@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from array import array
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import W0Error
 
@@ -177,17 +177,26 @@ class Terms:
         return self.margin * quantity
 
 
+def _scan_terms_shape(terms: Terms) -> tuple[Any, ...]:
+    return (terms.native, terms.margin, getattr(terms, "rate", 0.0))
+
+
 def _get_or_build_scan_columns(
     rows: list[dict[str, Any]],
     terms: Terms,
     marks: dict[str, float],
-    scan_cache: dict[Any, ScanColumns] | None,
+    scan_cache: dict[Any, tuple[Any, ...]] | None,
     scan_key: Any,
 ) -> ScanColumns:
     n = len(rows)
-    cached = scan_cache.get(scan_key) if scan_cache is not None else None
-    if cached is not None and len(cached[0]) == n:
-        return cached
+    entry = scan_cache.get(scan_key) if scan_cache is not None else None
+    if (
+        entry is not None
+        and entry[0] is rows
+        and entry[1] is marks
+        and entry[2] == _scan_terms_shape(terms)
+    ):
+        return cast(ScanColumns, entry[3])
     dates = [r["date"] for r in rows]
     prices = array("d", (positive(marks[d], "отметка LQDT") for d in dates))
     spreads = array("d", (float(r["spread"]) for r in rows))
@@ -214,7 +223,7 @@ def _get_or_build_scan_columns(
         date_to_idx,
     )
     if scan_cache is not None:
-        scan_cache[scan_key] = cols
+        scan_cache[scan_key] = (rows, marks, _scan_terms_shape(terms), cols)
     return cols
 
 
@@ -323,7 +332,7 @@ def size_proof_fast_c(
     marks: dict[str, float],
     initial: float,
     *,
-    scan_cache_pair: tuple[dict[Any, ScanColumns] | None, Any] = (None, None),
+    scan_cache_pair: tuple[dict[Any, tuple[Any, ...]] | None, Any] = (None, None),
     scalar_summary: tuple[str, str] | None = None,
 ) -> bool:
     rows = proof["series"]

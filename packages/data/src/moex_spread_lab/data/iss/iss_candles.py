@@ -19,6 +19,7 @@ from .iss_http import (
     DEFAULT_ISS_BASE_URL,
     IssIntakeError,
     fetch_json_with_raw,
+    is_safe_component,
 )
 from .iss_http import (
     candles_url as _candles_url,
@@ -211,6 +212,10 @@ def fetch_candle_series(  # noqa: PLR0913 - explicit keyword arguments preserve 
     opener: Callable[..., Any] = urllib.request.urlopen,
     raw_sink: RawSinkCallback | None = None,
 ) -> dict[str, Any]:
+    if not is_safe_component(secid):
+        raise IssIntakeError(f"invalid candle secid: {secid!r}")
+    if not is_safe_component(board):
+        raise IssIntakeError(f"invalid candle board: {board!r}")
     if interval <= 0 or delay_seconds < 0 or retries < 0:
         raise IssIntakeError("invalid candle interval, delay or retries")
     req = _CandleSeriesRequest(

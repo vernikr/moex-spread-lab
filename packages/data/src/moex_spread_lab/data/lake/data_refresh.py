@@ -16,6 +16,7 @@ from ..iss.catalog import (
     DEFAULT_ISS_BASE_URL,
     fetch_candle_series,
 )
+from ..iss.iss_http import is_safe_component
 from .h1_seal import SealedH1Reader
 from .io import atomic_write_json, writer_lock
 from .parquet_store import ParquetBarStore
@@ -73,6 +74,9 @@ def _parse_refresh_config(
     unknown = set(options) - _REFRESH_OPTIONS
     if unknown:
         raise TypeError(f"unexpected keyword argument(s): {sorted(unknown)}")
+    board = options.get("board", DEFAULT_BOARD)
+    if not is_safe_component(board):
+        raise DataRefreshError(f"invalid refresh board: {board!r}")
     workers = int(options.get("workers", 2))
     if not 1 <= workers <= 4:
         raise DataRefreshError("refresh workers must be between 1 and 4")
@@ -97,7 +101,7 @@ def _parse_refresh_config(
         initial_from=initial_from,
         output_dir=output_dir,
         cache_dir=cache_dir,
-        board=options.get("board", DEFAULT_BOARD),
+        board=board,
         base_url=options.get("base_url", DEFAULT_ISS_BASE_URL),
         overlap_sessions=overlap_sessions,
         chunk_days=int(options.get("chunk_days", 90)),

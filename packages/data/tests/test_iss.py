@@ -29,9 +29,40 @@ from moex_spread_lab.data.iss.iss_http import (
     candles_url,
     fetch_history_json,
     fetch_json_with_raw,
+    is_safe_component,
     rows,
 )
 from moex_spread_lab.data.lake.refresh_merge import RefreshTarget
+
+
+@pytest.mark.parametrize("field", ["secid", "board"])
+@pytest.mark.parametrize("bad", ["../escape", "X/Y", "X?z=1", "", ".", "..", "X\\Y"])
+def test_candle_intake_rejects_unsafe_segments_without_request_or_cache(tmp_path, field, bad):
+    calls = []
+    args = {"secid": "SAFE-1._", "board": "RFUD", field: bad}
+    with pytest.raises(IssIntakeError, match=field):
+        fetch_candle_series(
+            **args,
+            interval=60,
+            from_date="2026-01-01",
+            till_date="2026-01-02",
+            cache_dir=tmp_path,
+            opener=lambda *a, **k: calls.append(a),
+        )
+    assert not calls
+    assert not list(tmp_path.rglob("*"))
+
+
+@pytest.mark.parametrize("value", ["ABC", "Abc-1._", "_", "...", "12"])
+def test_safe_candle_identifiers_are_accepted(value):
+    assert RefreshTarget(value, 60).secid == value
+    assert is_safe_component(value)
+
+
+def test_candle_url_quotes_path_segments():
+    url = candles_url("https://iss.example", "R/F", "X?z=1", 60, "2026-01-01", "2026-01-02", 0)
+    assert urlparse(url).path.endswith("/boards/R%2FF/securities/X%3Fz%3D1/candles.json")
+    assert parse_qs(urlparse(url).query)["interval"] == ["60"]
 
 
 def test_candle_interval_labels_match_iss_durations():

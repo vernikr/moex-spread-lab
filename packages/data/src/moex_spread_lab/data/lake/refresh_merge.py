@@ -12,6 +12,7 @@ from typing import Any, cast
 from moex_spread_lab.core.w0 import sha256_file
 
 from ..iss.catalog import CANDLE_INTERVAL_LABELS
+from ..iss.iss_http import is_safe_component
 from .bar_types import DataLakeError
 from .parquet_store import ParquetBarStore
 
@@ -22,6 +23,10 @@ REFRESH_SCHEMA = "market-data-refresh.v1"
 class RefreshTarget:
     secid: str
     interval: int
+
+    def __post_init__(self) -> None:
+        if not is_safe_component(self.secid):
+            raise DataRefreshError(f"invalid refresh target SECID: {self.secid!r}")
 
     @property
     def timeframe(self) -> str:

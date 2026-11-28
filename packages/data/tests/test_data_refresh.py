@@ -5,6 +5,8 @@ import unittest
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from moex_spread_lab.data.lake.data_refresh import (
     DataRefreshError,
     RefreshTarget,
@@ -20,6 +22,34 @@ from moex_spread_lab.data.lake.refresh_merge import (
 )
 
 ASSUMPTION = "user_A-06_candle_is_usable_medium_term_price_proxy"
+
+
+@pytest.mark.parametrize("secid", ["../../escape", "/absolute", "X?start=0", "", ".", "..", "X\\Y"])
+def test_refresh_target_rejects_unsafe_secid_before_writes(tmp_path, secid):
+    with pytest.raises(DataRefreshError, match="SECID"):
+        refresh_candle_datasets(
+            root=tmp_path,
+            targets=[RefreshTarget(secid, 60)],
+            till_date="2026-01-02",
+            from_date="2026-01-01",
+            fetcher=lambda **kw: pytest.fail("unexpected fetch"),
+        )
+    assert not list(tmp_path.rglob("*"))
+
+
+def test_refresh_rejects_unsafe_board_before_writes_or_custom_fetch(tmp_path):
+    called = []
+    with pytest.raises(DataRefreshError, match="board"):
+        refresh_candle_datasets(
+            root=tmp_path,
+            targets=[RefreshTarget("ABC", 24)],
+            till_date="2026-01-02",
+            from_date="2026-01-01",
+            board="../RFUD",
+            fetcher=lambda **kw: called.append(kw),
+        )
+    assert called == []
+    assert not list(tmp_path.rglob("*"))
 
 
 def _row(day: int, close: float, raw_hash: str) -> dict:

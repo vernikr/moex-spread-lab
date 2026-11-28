@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
+import re
 import time
 import urllib.request
 from collections.abc import Callable
@@ -12,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from moex_spread_lab.core.derived_cache import HashedJSONCache as _HashedJSONCache
 from moex_spread_lab.core.w0 import W0Error
@@ -76,6 +77,14 @@ class IssIntakeError(W0Error):
     """Raised when an ISS response cannot pass the W1 intake contract."""
 
 
+def is_safe_component(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and value not in {".", ".."}
+        and bool(re.fullmatch(r"[A-Za-z0-9_.-]+", value))
+    )
+
+
 def _url(base_url: str, board: str) -> str:
     root = base_url.rstrip("/")
     fields = ",".join(SECURITY_FIELDS)
@@ -107,8 +116,8 @@ def _candles_url(
         }
     )
     return (
-        f"{root}/iss/engines/futures/markets/forts/boards/{board}"
-        f"/securities/{secid}/candles.json?{query}"
+        f"{root}/iss/engines/futures/markets/forts/boards/{quote(board, safe='')}"
+        f"/securities/{quote(secid, safe='')}/candles.json?{query}"
     )
 
 

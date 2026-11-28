@@ -14,9 +14,9 @@ from typing import Any, cast
 
 from moex_spread_lab.core.w0 import canonical_bytes
 
+from ..iss.iss_http import is_safe_component
 from .bar_types import LEGACY_CANDLE_SCHEMA, BarSeries, DataLakeError
 
-_SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9_.-]+$")
 _HEX64 = re.compile(r"[0-9a-fA-F]{64}")
 
 __all__ = [
@@ -49,7 +49,7 @@ class LegacyCandleSeries:
 
 
 def _component(value: Any, label: str) -> str:
-    if not isinstance(value, str) or not _SAFE_COMPONENT.fullmatch(value):
+    if not is_safe_component(value):
         raise DataLakeError(f"invalid {label} for data-lake path: {value!r}")
     return value
 

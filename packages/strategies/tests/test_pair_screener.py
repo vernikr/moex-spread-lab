@@ -242,3 +242,36 @@ def test_pair_screener_uses_bounded_caches_and_curated_exports():
     assert not {"annotations", "Any", "bisect_left", "partial"} & set(normalization_module.__all__)
     assert not hasattr(ScreenerInputs, "screen_history")
     assert not hasattr(ScreenerInputs, "search_history")
+
+
+def test_build_result_honors_initial_capital_across_branches_and_stress(tmp_path: Path) -> None:
+    _write_fixture(tmp_path)
+    save_settings(tmp_path, {"initial_capital_rub": 100000.0})
+    inputs = ScreenerInputs(tmp_path)
+
+    # quantity=4 fails VTB stress at 30k RUB, but passes at 100k RUB.
+    mr = build_result(
+        inputs,
+        {"pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion", "quantity": 4},
+    )
+    assert mr["daily"][0]["V"] == pytest.approx(100000.0)
+    assert mr["daily"][0]["B"] == pytest.approx(100000.0)
+    assert mr["metrics"]["lqdt_return_pct"] == pytest.approx(
+        round((mr["daily"][-1]["B"] / 100000.0 - 1) * 100, 3)
+    )
+    assert mr["metrics"]["lqdt_return_pct"] > 0
+
+    carry = build_result(
+        inputs,
+        {
+            "pair": "CNYRUBF/CRZ6",
+            "strategy": "funding_only",
+            "parameters": {"lookback": 10},
+            "quantity": 4,
+        },
+    )
+    assert carry["daily"][0]["B"] == pytest.approx(100000.0)
+    assert carry["metrics"]["lqdt_return_pct"] == pytest.approx(
+        round((carry["daily"][-1]["B"] / 100000.0 - 1) * 100, 3)
+    )
+    assert carry["metrics"]["lqdt_return_pct"] > 0

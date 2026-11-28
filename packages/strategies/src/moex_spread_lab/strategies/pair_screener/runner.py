@@ -106,6 +106,7 @@ class _BranchReq:
     execution: dict[str, float | int]
     through: str | None
     share: float
+    initial_capital: float = 30000.0
 
 
 def _run_mean_reversion_branch(req: _BranchReq) -> StrategyRunOutcome:
@@ -126,7 +127,9 @@ def _run_mean_reversion_branch(req: _BranchReq) -> StrategyRunOutcome:
             ],
         }
     qty = int(req.execution["quantity"])
-    risk = assess_vtb_pair(req.inputs.contracts, near, far, quantity=qty)
+    risk = assess_vtb_pair(
+        req.inputs.contracts, near, far, initial_capital=req.initial_capital, quantity=qty
+    )
     if not risk["summary"]["all_scenarios_passed"]:
         raise ScreenerError("пара не проходит стресс-экран рабочего капитала")
     funding_swaprates: dict[str, float] = {}
@@ -139,6 +142,7 @@ def _run_mean_reversion_branch(req: _BranchReq) -> StrategyRunOutcome:
         funding_swaprates = evidence.rates
     report = run_mean_reversion_baseline(
         series,
+        initial_capital=req.initial_capital,
         lookback=int(req.params["lookback"]),
         entry_z=float(req.params["entry_z"]),
         exit_z=float(req.params["exit_z"]),
@@ -195,6 +199,7 @@ def _run_funding_only_branch(req: _BranchReq) -> StrategyRunOutcome:
         req.inputs.benchmark,
         req.inputs.contracts,
         transaction_cost_scenario="tariff",
+        initial_capital=req.initial_capital,
         warmup_observations=int(req.params["lookback"]),
         strategy_variant="funding_only",
         quantity=qty,
@@ -202,7 +207,9 @@ def _run_funding_only_branch(req: _BranchReq) -> StrategyRunOutcome:
         cash_in_lqdt=True,
         slippage_ticks=float(req.execution["slippage_ticks"]),
     )
-    risk = assess_vtb_pair(req.inputs.contracts, near, far, quantity=qty)
+    risk = assess_vtb_pair(
+        req.inputs.contracts, near, far, initial_capital=req.initial_capital, quantity=qty
+    )
     if not risk["summary"]["all_scenarios_passed"]:
         raise ScreenerError("пара не проходит стресс-экран рабочего капитала")
     summary = report["summary"]
@@ -289,6 +296,7 @@ def build_result(
         execution=execution,
         through=through,
         share=share,
+        initial_capital=initial,
     )
     outcome = (
         _run_mean_reversion_branch(req)

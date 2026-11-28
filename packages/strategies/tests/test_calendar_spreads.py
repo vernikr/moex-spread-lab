@@ -268,6 +268,45 @@ class ProofPayloadTests(unittest.TestCase):
         )
         self.assertTrue(forced_sizing["trades"][0]["open_at_end"])
 
+    def test_same_bar_terminal_trade_reconciles_and_stays_flat_on_trailing_bars(self):
+        r0 = _proof_row("2026-01-10T10:00:00", 100.0, 110.0)
+        r1 = {**_proof_row("2026-01-10T11:00:00", 100.0, 113.0), "spread_open_price": 10.0}
+        r2 = {
+            **_proof_row("2026-01-10T12:00:00", 100.0, 190.0),
+            "min_volume": 1,
+            "volume_eligible": True,
+            "entry_eligible": False,
+            "exit_eligible": False,
+        }
+        window = {**_proof_window([r0, r1, r2]), "timeframe": "1h"}
+        account = {
+            "trade_list": [
+                {
+                    "direction": -1,
+                    "signal": {"kind": "z", "date": r0["date"], "value": 2.0},
+                    "reason": "end_of_window",
+                    "entry_row": r1,
+                    "exit_row": r1,
+                    "entry_costs": {"exchange_clearing": 5.0, "slippage": 1.0},
+                    "exit_costs": {"exchange_clearing": 5.0, "slippage": 1.0},
+                    "margin_rub": 1000.0,
+                    "gross_rub": 0.0,
+                    "costs_rub": 12.0,
+                    "lqdt_on_margin_rub": 0.0,
+                }
+            ],
+            "costs_rub": 12.0,
+            "lqdt_on_pair_margin_while_open_rub": 0.0,
+        }
+        payload = build_proof_payload(window, account, _proof_meta(quantity=2))
+        self.assertEqual(payload["summary"]["gross_rub"], 0.0)
+        self.assertEqual(payload["summary"]["net_rub"], -12.0)
+        self.assertEqual(payload["summary"]["ledger_reconciliation_rub"], 0.0)
+        self.assertEqual(payload["summary"]["fx_point_value_drift_rub"], 0.0)
+        self.assertEqual([row["position"] for row in payload["ledger"]], [0, 0, 0])
+        self.assertEqual([row["quantity"] for row in payload["ledger"]], [0, 0, 0])
+        self.assertEqual(payload["ledger"][-1]["mark_pnl_rub"], 0.0)
+
     def test_execute_calendar_proof_honors_threshold_pp_and_rejects_bad_params(self):
         days = [f"2026-01-{day:02d}" for day in range(1, 28)]
         histories = {

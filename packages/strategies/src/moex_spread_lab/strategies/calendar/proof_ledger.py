@@ -38,7 +38,7 @@ def elapsed_days(start: str, end: str) -> float:
 class _LedgerSim:
     quantity: int
     by_entry: dict[str, dict[str, Any]]
-    by_exit: dict[str, dict[str, Any]]
+    by_num: dict[int, dict[str, Any]]
     marked: dict[int, float]
     position: dict[str, Any] | None = None
     cumulative: float = 0.0
@@ -50,13 +50,13 @@ def _step_open_position(
 ) -> tuple[float, float]:
     if sim.position is None:
         return 0.0, 0.0
-    a = sim.by_exit.get(day)
-    d = a is not None and a["reason"] == "end_of_window"
-    if a is not None and (ext_ok or d):
-        end = float(a["exit"]["spread_fill"])
+    trade = sim.by_num[sim.position["number"]]
+    forced = trade["reason"] == "end_of_window"
+    if trade["exit"]["date"] == day and (ext_ok or forced):
+        end = float(trade["exit"]["spread_fill"])
         b = sim.position["sign"] * (end - sim.position["mark"]) * point
         sim.marked[sim.position["number"]] += b
-        e = sum(a["exit"]["costs"].values())
+        e = sum(trade["exit"]["costs"].values())
         sim.position = None
         return b, e
     if vol_ok:
@@ -77,6 +77,13 @@ def _step_entry_position(
     c = 1 if a["side"] == "long_spread" else -1
     g = sum(a["entry"]["costs"].values())
     d = float(a["entry"]["spread_fill"])
+    if a["exit"]["date"] == day and (
+        bool(row.get("exit_eligible", vol_ok)) or a["reason"] == "end_of_window"
+    ):
+        end = float(a["exit"]["spread_fill"])
+        b = c * (end - d) * point
+        sim.marked[a["number"]] += b
+        return b, g + sum(a["exit"]["costs"].values())
     if vol_ok:
         e = float(row["spread_price"])
         b = c * (e - d) * point
@@ -94,7 +101,7 @@ def simulate_marked_ledger(
     sim = _LedgerSim(
         quantity=quantity,
         by_entry={a["entry"]["date"]: a for a in trades},
-        by_exit={a["exit"]["date"]: a for a in trades},
+        by_num={int(a["number"]): a for a in trades},
         marked={int(a["number"]): 0.0 for a in trades},
     )
     for row in rows:

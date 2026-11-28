@@ -38,10 +38,13 @@ BYTE_EXACT_PLATFORM = "Linux"
 # research-settings.v1 schema marker (self-describing run identities). Verified: with the
 # marker stripped the pipeline reproduces the previous hashes exactly, so this move is
 # caused solely by the schema key.
-BYTE_EXACT_RUN_ID = "92f53213ab612ce6"
-BYTE_EXACT_DIGEST = "3c027d9abc513af38fc7e2c5f17b4e4de7a527bf8002de02f3a1660d322fd734"
+# Re-recorded again for #344: simulate_marked_ledger now closes same-bar terminal
+# calendar trades on the entry bar instead of skipping exit costs; verified diff is
+# isolated to trial 7 SRH3/SRM3 (-7.417343105 -> -7.650809905 pp).
+BYTE_EXACT_RUN_ID = "eb7f4a44bc2e2d20"
+BYTE_EXACT_DIGEST = "bc344d71b6f213ac9ba72960be84b3b2b35d1ea3d73ebfabee352f9317ff949e"
 # Platform-independent: floats rounded to 9 decimals, generated ids replaced.
-NUMERIC_DIGEST = "17c38354c1b9872208ae8e58cefefb2ef6486b395f8435e5222aa0a614cb82b1"
+NUMERIC_DIGEST = "8e025ee6ea3f6ed31437042e00b9516895c5b94f6e880f21e576932d6a857257"
 ROUND_DIGITS = 9
 
 
